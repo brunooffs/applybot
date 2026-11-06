@@ -1,0 +1,98 @@
+# Canonical matching profile (source of truth for scoring).
+# Derived from your profile document. Edit freely.
+
+name: Bruno Sousa
+headline: Senior Software Engineer & Architect
+seniority: Senior, with selective Principal-level opportunities
+experience_years: "20+"
+home_base: Portugal
+languages: [Portuguese, English, Spanish, French, Dutch]
+
+positioning: >
+  Senior hands-on software engineer, systems architect and technical leader
+  with extensive experience designing, developing, integrating and operating
+  complex software systems: backend engineering, distributed architectures,
+  cloud-native platforms, infrastructure automation, high availability and
+  enterprise integrations.
+
+seniority_detail:
+  engineering: Senior
+  architecture: Senior / Lead
+  systems_engineering: Senior
+  backend: Senior
+  cloud_platform: Senior
+  technical_leadership: Senior
+  agile_scrum: Experienced practitioner
+  formal_people_management: Limited / not established
+  project_management: Supporting experience, not a primary specialisation
+
+# Job families used for classification. "tier" drives nothing numerically by
+# itself: the title alone must never inflate a score.
+families:
+  primary:
+    - Senior Backend Engineer
+    - Senior Software Engineer
+    - Senior Systems Engineer
+    - Solutions Architect
+    - Cloud Architect
+    - Platform Engineer
+    - Platform Architect
+    - Technical Lead
+    - Distributed Systems Engineer
+    - Infrastructure Engineer
+  secondary:
+    - DevOps Engineer
+    - DevOps Architect
+    - Cloud Infrastructure Engineer
+    - Integration Architect
+    - Full-Stack Developer
+    - Flutter Engineer
+    - Mobile Architect
+    - Software Development Lead
+    - Scrum Master
+    - Agile Delivery Lead
+    - Technical Delivery Manager
+  selective:   # partial match: always review, never auto
+    Engineering Manager: Formal people management requirements
+    Project Manager: Limited formal PM methodology experience
+    Agile Coach: Facilitation experience, formal coaching depth needs assessment
+    AI Engineer: AI integration and experimentation, not deep ML engineering
+    AI Platform Engineer: Cloud/platform background, developing AI operations experience
+    Principal Engineer: Depends on technical and organisational scope
+    Principal Architect: Depends on architecture governance and enterprise ownership
+
+preferences:
+  geography: Worldwide search
+  working_mode: [remote, hybrid]      # in order of preference
+  onsite: consider selectively
+  relocation: open to discussion
+  employment_types: [permanent, b2b, contract, freelance]
+  availability: Actively seeking, immediate income is the current priority
+  salary: Flexible during current search
+  currency: EUR preferred, others accepted
+  travel: Consider international travel
+
+capabilities:
+  - Backend and service architecture
+  - Cloud-native and distributed systems
+  - Microservice design and service boundaries
+  - Event-driven and asynchronous architectures
+  - API design and enterprise integrations
+  - High availability and fault tolerance
+  - Database modelling and data access patterns
+  - Real-time communication
+  - Infrastructure automation and container orchestration
+  - CI/CD and deployment architecture
+  - Production troubleshooting and performance optimisation
+  - Observability and operational reliability
+  - Security-by-design and identity integration
+  - Technical design reviews and architectural decisions
+  - Legacy integration and modernisation
+  - Technical leadership, mentoring, Agile/Scrum facilitation
+
+matching_policy: >
+  Prioritise direct professional experience, distinguish production experience
+  from independent projects and familiarity, penalise unmet mandatory
+  requirements, and select the most relevant dedicated CV for each opportunity.
+  Worldwide search does not imply worldwide work authorisation: evaluate
+  separately whether the role can be done from Portugal.

@@ -1,0 +1,12 @@
+data/
+outbox/
+cvs/*.pdf
+cvs/*.docx
+.env
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+config/facts.yaml
+config/profile.yaml
+config/settings.yaml

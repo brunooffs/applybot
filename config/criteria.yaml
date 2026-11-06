@@ -1,0 +1,62 @@
+# Scoring model. Weights are an initial proposal from your profile; calibrate
+# them against real outcomes later.
+
+weights:
+  technical: 30          # skills and mandatory requirements
+  seniority: 20          # professional experience and seniority
+  responsibilities: 20   # role and responsibility alignment
+  architecture_domain: 10
+  geography: 10          # working arrangement and geography
+  employment: 10         # employment type and availability
+
+thresholds:
+  strong: 85       # >= : auto_eligible (if nothing else flags it)
+  good: 70         # >= : review and apply
+  potential: 55    # >= : human review; below this: reject
+
+# Auto-sending is OFF. "auto_eligible" is only a label until you flip this and
+# build trust in the output. Today every application goes through `applybot
+# approve`.
+auto_send_enabled: false
+
+# Cheap keyword gate before any LLM call. Case-insensitive.
+prefilter:
+  include_title_keywords:
+    - backend
+    - back-end
+    - back end
+    - software engineer
+    - software developer
+    - systems engineer
+    - architect
+    - platform
+    - cloud
+    - devops
+    - infrastructure
+    - distributed
+    - technical lead
+    - tech lead
+    - flutter
+    - mobile
+    - full-stack
+    - full stack
+    - fullstack
+    - scrum master
+    - agile
+    - delivery
+    - engineering manager
+    - project manager
+    - principal
+    - ai engineer
+    - integration
+  exclude_title_keywords:      # whole-word match
+    - junior
+    - intern
+    - internship
+    - trainee
+    - graduate
+    - sales
+    - account executive
+    - recruiter
+    - marketing
+    - designer

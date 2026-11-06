@@ -1,0 +1,57 @@
+# Runtime settings. Everything is local; the only network calls are
+# (a) job sources and (b) the LLM provider you pick below.
+
+llm:
+  # "ollama"    -> fully local, no data leaves your machine
+  # "anthropic" -> Claude API, needs ANTHROPIC_API_KEY in your environment
+  # OPEN QUESTION: pick one. Scoring/verification quality is noticeably
+  # better with a strong hosted model than with a small local one.
+  provider: ollama
+  ollama:
+    host: http://localhost:11434
+    model: qwen2.5:14b        # placeholder, use whatever fits your hardware
+  anthropic:
+    model: claude-sonnet-5-5
+    max_tokens: 2000
+  temperature: 0
+  # Per-stage override of the default provider above. A stage not listed uses
+  # `provider`. Stages: score, draft, verify, reply (classify + draft replies).
+  # verify = the fact-check that stops invented claims, worth a hosted model.
+  stages:
+    draft: ollama
+    verify: anthropic
+
+mail:
+  # Your own server (PTESP / cPanel). Password is NEVER stored here:
+  #   export APPLYBOT_MAIL_PASS='...'
+  username: bruno@gif.pt          # full address, also used as From
+  smtp_host: mail.gif.pt
+  smtp_port: 465
+  smtp_security: ssl              # ssl = implicit TLS (465) | starttls (587)
+  imap_host: mail.gif.pt
+  imap_port: 993
+  inbox_folder: INBOX
+  # CONFIRM: cPanel/Dovecot usually names it "INBOX.Sent", some setups "Sent".
+  # If the append fails the send still succeeds and a warning is logged.
+  sent_folder: INBOX.Sent
+  # Filename recruiters see for the CV, whatever the file in cvs/ is called.
+  # Leave empty to send the CV file under its own name.
+  attach_as: Bruno-Sousa-CV.pdf
+  daily_cap: 15                   # max applications sent per UTC day
+  spacing_seconds: 180            # pause between sends
+  reply_lookback_days: 14
+
+paths:
+  db: data/applybot.sqlite
+  outbox: outbox
+  cvs: cvs
+
+http:
+  user_agent: "applybot/0.1 (personal job search tool)"
+  delay_seconds: 1.0          # pause between board requests
+
+pipeline:
+  max_description_chars: 12000
+  # Everything below this is never drafted. Anything between this and the
+  # "strong" threshold goes to human review.
+  draft_min_decision: human   # one of: human, auto_eligible

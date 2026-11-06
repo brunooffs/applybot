@@ -1,0 +1,331 @@
+# VERIFIED FACTS. The ONLY source the letter generator and the fact-checker
+# are allowed to use. Anything not here cannot appear in a letter or be
+# answered on an application form.
+#
+# Skill levels:
+#   production   used in professional systems
+#   project      independent / personal projects only
+#   working      understand and can work with it, limited implementation
+#   familiarity  concepts and architecture only
+#   none         do not claim
+#
+# Lines marked CONFIRM are my conservative reading of "Professional /
+# experimental depending on tool" in your profile. Fix them first: every
+# CONFIRM left at "project" under-claims you.
+
+identity:
+  name: Bruno Sousa
+  location: Portugal
+  languages: [Portuguese, English, Spanish, French, Dutch]
+  github: https://github.com/brunooffs
+  email: bruno@gif.pt
+  phone: +351 968386286          # optional
+  linkedin: https://www.linkedin.com/in/brunodesousa/       # optional
+
+experience:
+  total: "20+ years"
+  summary: >
+    Software development, architecture, enterprise systems, backend
+    engineering, distributed systems and infrastructure.
+  # Work history below was read from https://xitaca.com/ on 2026-11-05 with an
+  # automated page reader (most recent first). PROOFREAD dates and numbers: this
+  # file is the only thing letters may draw on. Lines marked CONFIRM are places
+  # where the site's summary and detail sections disagree; I used the detail wording.
+  employers:
+    - name: Independent (self-employed developer)
+      roles:
+        - title: Independent Developer
+          dates: May 2025 to present
+          stack: [Flutter, Dart, Firebase (authentication, real-time sync, cloud storage), Google Cloud, Facebook Ads, Google Ads]
+          work: >
+            Mobile app developer for iOS and Android. The site names Fit Trail,
+            a social fitness app for sharing routes and workouts, and says he
+            runs digital ad campaigns for it.
+          # CONFIRM: how does Fit Trail relate to Waybound (listed under independent_projects)?
+        - title: Independent R&D, Advanced Application Modeling
+          dates: 2015 to 2019
+          stack: [Node.js, MongoDB, AngularJS, React, WebSocket, WebRTC]
+          work: >
+            Full-stack platform-as-a-service and modeling framework with
+            low-code generation, real-time collaboration, a distributed
+            fault-tolerant runtime and A/B testing. Applications deployed for
+            Leiden University and PNO b.v.
+          # Same work as independent_projects: Application modelling platform.
+
+    - name: Critical TechWorks (BMW Group)
+      notes: Production experience; Scrum Master responsibilities; additional workshop (name TODO)   # notes come from the profile document, not the site
+      roles:
+        - title: Backend Architect & Developer   # CONFIRM: site summary says "Software Engineer"
+          dates: 2022 to 2025
+          project: Smart WallBox, EV charging platform for the BMW MyApp, following the BDL project
+          stack: [NestJS, Kubernetes, Terraform, Microsoft Azure, OCPP 2.0, CI/CD]
+          work: Microservices on Kubernetes; monitoring, logging and auditing.
+        - title: Software Engineer
+          dates: 2020 to 2022
+          project: Bidirectional Charging (BDL) MVP, fleet of 20 BMW i3 vehicles with BMW BDL batteries
+          stack: [AWS Lambda, Python, API Gateway, SQS, CloudFormation, Cognito, Secrets Manager, SES]
+          work: Serverless backend, a web app and an operations cockpit.
+          highlights: 80%+ test coverage and a zero-incident go-live (as stated on the site)
+        - title: Software Engineer
+          dates: 2019 to 2020
+          project: Electric Vehicle Charger (EVC), a joint venture with Critical Software
+          stack: [Node.js, React, Microsoft Azure, Kubernetes, Terraform, OCPP 1.6]
+          work: Application for EV charger communication.
+
+    - name: Netwerven B.V. / Endouble (acquired by Phenon in 2020)
+      roles:
+        - title: Senior Software Engineer / Consultant   # CONFIRM: site summary says "Software Engineer / Consultant"
+          dates: 2014 to 2015
+          stack: [Vagrant, Jenkins, PHP, Symfony, Redis]
+          work: >
+            Architect and developer while the company grew from a small agency
+            into a software house with 50+ clients (including Booking.com, Nike,
+            G-Star, Cofely GDF SUEZ, Ahold). Moved teams from Waterfall to
+            Agile/Scrum; introduced TDD/BDD, Vagrant and Jenkins CI.
+
+    - name: Spil Games b.v.
+      notes: Large-scale gaming; Scrum Master responsibilities
+      roles:
+        - title: Software Engineer / Scrum Master
+          dates: 2011 to 2014
+          stack: [CentOS, Nginx, CakePHP, MySQL, RabbitMQ, Cassandra, Node.js, Python, PHP, Erlang, Optimizely, New Relic]
+          work: >
+            Gaming portals with 30M+ unique monthly visitors; the platform
+            migrated to an Erlang-based backend; A/B testing with Optimizely
+            and New Relic.
+
+    - name: United Games B.V. (a Bwin company)
+      roles:
+        - title: Senior Developer   # CONFIRM: site summary says "Software Engineer"
+          dates: 2011
+          stack: [Symfony, Facebook APIs]
+          work: >
+            Social and multiplayer games; worked on the Volvo Ocean Race app
+            and "Raise of the Ten"; maintained live-betting games.
+
+    - name: Ratus b.v.
+      roles:
+        - title: Software Engineer
+          dates: 2011
+          stack: [PHP, MySQL, JavaScript]
+          work: Subscription web platforms with real-time chat and live video streaming; white-label solutions.
+
+    - name: Emesa B.V.
+      roles:
+        - title: Backend Architect & Developer
+          dates: 2010 to 2011
+          stack: [Zend Framework, REST, Facebook Scribe, QlikView, Afast API]
+          work: Modernized an award-winning e-commerce platform; built a high-performance auction platform on a RESTful architecture.
+
+    - name: Santander Consumer Finance
+      roles:
+        - title: Senior Software Developer / Architect   # site summary has a typo ("Architectr")
+          dates: 2008 to 2010
+          stack: [PHP, SOAP, XML-RPC, IBM AS/400, .NET]
+          work: >
+            Maintained a 24/7 high-availability financial platform; built
+            SOAP/XML-RPC web services and middleware connecting PHP to IBM
+            AS/400 systems in Madrid; migrated .NET applications to PHP;
+            integration work for KIA Motors.
+
+    - name: Braam Informatica B.V.
+      roles:
+        - title: Senior Consultant & Development Manager
+          dates: 2007 to 2008
+          stack: [TYPO3]
+          work: >
+            Led development and IT consulting across network infrastructure,
+            outsourcing and enterprise support; industrial automation
+            (domotics, burotics, robotics) with Nseven.
+        - title: Software Developer & Technical Trainer   # CONFIRM: site summary says "Freelance Developer"
+          dates: 2001 to 2002
+          stack: [C++, Borland C++ Builder 5.0, InterBase, Oracle, Flash]
+          work: >
+            Outsourced to GEN b.v. for European energy market software;
+            handled 2M+ counters; taught Flash training in The Hague.
+
+    - name: USMedia B.V.
+      roles:
+        - title: Senior Developer
+          dates: 2007
+          stack: [PHP5, MySQL, AMFPHP, Propel, Smarty, Maven, JavaScript]
+          work: Web and digital solutions for Shell, ABN AMRO, Tommy Hilfiger, Unilever, Canon and EA Games.
+
+    - name: Self-employed
+      roles:
+        - title: Freelance Web Developer
+          dates: 2006 to 2007   # the site's end year is truncated ("200")
+          stack: [Joomla, Flash]
+          work: IT consulting and web development for small businesses.
+
+    - name: Government of Namibe (Namibe, Angola)
+      roles:
+        - title: IT Consultant & Web Developer
+          dates: 2006
+          stack: [PHP, MySQL, Flash, Joomla]
+          work: >
+            Technical training, satellite internet installation and a local
+            network for a public Cyber Cafe; official websites for the Namibe
+            government and sea port.
+
+    - name: GEN b.v.
+      roles:
+        - title: Technological Consultant
+          dates: 2005
+          stack: [Java, XML/XSD/XSLT, SOAP, EDIFACT, Python, Apache Ant, Tomcat, BPML]
+          work: GEN E-Base and GEN CIS for the energy and utilities sector.
+
+    - name: GIF Lda.   # Global Intelligence File, the studio co-founded in 2000
+      roles:
+        - title: Freelance Web Developer
+          dates: 2003 to 2004
+          stack: [PHP, MySQL, JavaScript, Flash, Apache]
+          work: >
+            CMS for the Instituto Portugues do Oriente, a Flash-based site for
+            TOSCCA, and an intranet for the University of Coimbra Agrarian School.
+        - title: Manager & Developer (Global Intelligence File)
+          dates: 2000 to 2001
+          work: >
+            Co-founded a multimedia and web studio; websites for Vale do Garrao
+            and a Lotus Notes v4.0 stock management system.
+
+    - name: Braam Informatica B.V.
+      roles:
+        - title: Software Developer & Technical Trainer   # CONFIRM: site summary says "Freelance Developer"
+          dates: 2001 to 2002
+          stack: [C++, Borland C++ Builder 5.0 Enterprise Edition, InterBase, Oracle, EDINE, SAP connectivity, Macromedia Flash]
+          work: >
+            Outsourced to GEN b.v. to support the development and testing of
+            enterprise software systems for the European energy market,
+            managing operations for water, gas and electricity networks.
+            Contributed to modular applications for supplier, producer and
+            consumer management, integrating telemetry data, production
+            forecasting and SAP connectivity. Worked extensively with C++
+            (Borland C++ Builder 5.0, Enterprise Edition) on InterBase and
+            Oracle databases, supporting large-scale datasets with over 2
+            million counters capturing 5-minute interval readings.
+            Implemented industry protocols such as EDINE for utility data
+            exchange and system interoperability. Delivered internal training
+            courses in Macromedia Flash and web design for Braam Informatica
+            staff and external clients in The Hague. Developed a multimedia
+            presentation CD-ROM for U-ZOEKT in Rotterdam, including
+            interactive design and animation using Flash and multimedia
+            authoring tools.
+
+    - name: Jackingprod
+      roles:
+        - title: IT Consultant & Web Developer
+          dates: 2003
+          stack: [PHP, MySQL, JavaScript, VB, Flash, Apache]
+          work: Websites, CMS platforms and animations.
+
+    - name: IBM Global Services
+      roles:
+        - title: Software Engineer
+          dates: 1998 to 1999   # CONFIRM: the site's summary says 1999 to 2000
+          stack: [C, C++, IBM VisualAge, S/390 mainframes, Crystal Reports, Lotus Notes]
+          work: >
+            Barclays virtual banking (London); LISNAVE operations software;
+            a Lotus Notes asset-tracking application in Porto.
+
+  domain: >
+    EV charging (OCPP 1.6-2.1, V2G, V2H), professional domain experience at
+    Critical TechWorks (BMW Group): OCPP 1.6 on EVC, bidirectional charging on
+    BDL, OCPP 2.0 on Smart WallBox.
+  # CONFIRM: the site mentions OCPP 1.6 and 2.0 only; your profile says up to 2.1.
+
+certifications:
+  # Provided by you on 2026-11-05 (not on the site).
+  - name: Certified ScrumMaster
+    issuer: Scrum Alliance
+    year: 2010
+    note: dated 2010; do not describe as current unless renewed
+  - name: XP Development Certification
+    issuer: Scrum Alliance
+    year: 2010
+    note: dated 2010; do not describe as current unless renewed
+  - name: Erlang Camp
+    issuer: University of Coruna
+    year: 2012
+    # CONFIRM: course/bootcamp rather than a formal certification?
+  - name: "IBM Certifications: Application Development, Lotus Notes, Unix/C++"
+    issuer: IBM
+    year: 1998
+
+education:
+  - institution: University of Algarve (Portugal)
+    field: Business & Administration / Computer Science
+    degree: TODO   # level, completion status and years were not given: letters must not say "degree" until you set this
+
+skills:
+  backend:        {level: production, items: [Node.js, TypeScript, JavaScript, NestJS, Python, PHP]}
+  frontend:       {level: production, items: [React, AngularJS]}
+  mobile:         {level: production, items: [Flutter, Dart]}
+  api:            {level: production, items: [REST, GraphQL, API gateways, WebSockets]}
+  distributed:    {level: production, items: [Microservices, event-driven architecture, asynchronous messaging, fault tolerance]}
+  aws:            {level: production, items: [Lambda, API Gateway, SQS, DynamoDB, Cognito, CloudFormation]}
+  azure:          {level: production, items: [Kubernetes, Cosmos DB, Functions, Azure DevOps]}
+  gcp:            {level: project,    items: [Cloud Functions and related services]}
+  containers:     {level: production, items: [Docker, Docker Compose, Kubernetes]}
+  iac:            {level: production, items: [Terraform, CloudFormation]}
+  ci_cd:          {level: production, items: [CI/CD, Jenkins]}                 # CONFIRM
+  gitops:         {level: project,    items: [GitOps, Helm, Argo CD]}          # CONFIRM
+  databases:      {level: production, items: [PostgreSQL, MySQL, MongoDB, Cassandra, Redis]}
+  messaging:      {level: project,    items: [Kafka, RabbitMQ, Spark]}         # CONFIRM (SQS is under aws)
+  search:         {level: project,    items: [Elasticsearch, Kibana, ELK]}     # CONFIRM
+  observability:  {level: project,    items: [Grafana, Dynatrace, Prometheus, OpenTelemetry, Tempo]}  # CONFIRM
+  os:             {level: production, items: [Linux, Unix-like systems, command line, system internals]}
+  ev_charging:    {level: production, items: [OCPP 1.6-2.1, V2G, V2H]}
+  geospatial:     {level: project,    items: [Mapbox, real-time location, route engines]}  # CONFIRM
+  ai_integration: {level: project,    items: [LLM integration, AI-assisted quest generation, infrastructure analysis]}
+
+# Treated as level "none" until you say otherwise. Job requirements for these
+# must never be answered "met" on your behalf.
+not_claimed:
+  - C# / .NET            # CONFIRM your actual level
+  - Java / Spring        # CONFIRM your actual level
+  - Advanced ML engineering
+  - Formal people management
+
+independent_projects:
+  # These are NOT employment. Letters must present them as independent work.
+  - name: Waybound
+    kind: Product development
+    description: >
+      Cross-platform Flutter/Dart application with Mapbox, geospatial
+      exploration, Firebase backend integrations, real-time location,
+      interactive quests and AI-powered content generation.
+    status: Closed testing on Google Play and Apple TestFlight; not publicly released.
+  - name: AdLab
+    kind: Infrastructure experimentation
+    description: >
+      Independent infrastructure lab using Kafka, Spark, PostgreSQL, Redis,
+      MongoDB, Elasticsearch, Docker, Kubernetes experiments, GitOps and
+      observability, including AI-assisted infrastructure analysis.
+    status: Open source; creator and sole contributor.
+  - name: Application modelling platform
+    kind: Independent R&D
+    description: >
+      Custom low-code application platform with a visual editor, graph-based
+      knowledge processing, custom intermediate representation, dynamic
+      runtime, real-time collaboration and fault-tolerant workers.
+
+leadership:
+  - Technical leadership and mentoring
+  - Cross-functional collaboration with stakeholders and Product Owners
+  - Agile and Scrum facilitation; Scrum Master responsibilities at Spil Games and Critical TechWorks
+  - Sprint planning and delivery coordination
+  - Working with distributed international teams
+  
+language_levels:
+  Portuguese: Native
+  English: C2 (Proficient)
+  Spanish: C1 (Advanced)
+  French: B1 (Intermediate)
+  Dutch: A1 (Beginner) 
+
+availability: Immediately; actively seeking
+work_authorisation: >
+  Portugal-based. No visa or work permit needed in any EU member state, or in
+  countries with a free-movement agreement with the EU. For anywhere else, the
+  candidate answers personally, never the bot.

@@ -1,0 +1,17 @@
+# Where jobs come from. Only sources that publish machine-readable boards.
+# LinkedIn and Indeed are deliberately NOT here (ToS / account-ban risk).
+#
+# NOTE: adapters were written from the documented shape of each public
+# endpoint and are NOT yet verified against live responses. First real
+# `applybot ingest` is the test.
+
+# Company board tokens. Find them in the company's careers URL, e.g.
+#   boards.greenhouse.io/<token>   jobs.lever.co/<token>   jobs.ashbyhq.com/<token>
+# Start empty and add the companies you actually care about.
+greenhouse: []
+lever: []
+ashby: []
+
+remotive:
+  enabled: true
+  categories: [software-dev, devops]   # CONFIRM category slugs on first run

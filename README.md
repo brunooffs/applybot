@@ -1,0 +1,106 @@
+# applybot
+
+Local, review-first job search assistant for one person. Finds postings,
+scores them against a verified profile, picks the right CV, drafts a
+grounded cover letter, fact-checks it, and puts it in a queue for you to
+approve. Nothing is sent without `applybot send --yes`.
+
+```
+sources -> prefilter -> LLM extraction -> deterministic decision -> CV pick
+        -> letter draft -> numeric guard + LLM fact-check -> review queue
+        -> approve (packet in outbox/) -> send (optional, SMTP)
+```
+
+Full design, data model, decision rules and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+**Try it without sending anything:** `pbpaste | applybot try -` (macOS: copy a
+job posting first) shows which CV would be chosen, the score and reasons, and
+the drafted letter. It stores and sends nothing.
+
+## Setup
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest                      # 25 tests, no network needed
+```
+
+1. Edit `config/facts.yaml`: resolve every `TODO` and `CONFIRM`. This file is
+   the only thing letters may draw from.
+2. Put your CVs in `cvs/` (names in `cvs/cvs.yaml`). `applybot cvs` shows what
+   is missing and which job families have no CV.
+3. Pick the LLM in `config/settings.yaml` (`ollama` local, or `anthropic` with
+   `ANTHROPIC_API_KEY`).
+4. Add company board tokens to `config/sources.yaml`.
+
+## Daily use
+
+```bash
+applybot run --limit 30     # ingest + score + draft
+applybot queue              # drafts waiting, best first ("!" = failed verification)
+applybot show <id-prefix>   # posting, reasons, letter, verification issues
+applybot edit <id-prefix>   # fix the letter in $EDITOR
+applybot approve <id-prefix># builds outbox/<job>/ with letter.md, job.md, CV copy
+applybot send               # dry-run; add --yes to send (needs contact email in the posting)
+applybot stats
+```
+
+## Dashboard (optional)
+
+```
+applybot serve --open        # http://127.0.0.1:8765, Ctrl-C to stop
+```
+
+Paste-a-posting (`try`), the review queue with an editor, approve/reject, a
+confirmation page before every send, and the inbox with reply drafts. It calls
+the same code as the commands above, so the same checks apply (fact-check, CV
+file must exist, daily cap). It only answers on your own computer.
+
+Start it from the terminal where `APPLYBOT_MAIL_PASS` (and `ANTHROPIC_API_KEY`,
+if used) are exported, otherwise sending and "Check replies" will fail. New
+postings still come from `applybot run`.
+
+## Mail (your own server, bruno@gif.pt)
+
+Settings are in `config/settings.yaml` under `mail`. The password is only ever
+read from the environment:
+
+```bash
+export APPLYBOT_MAIL_PASS='...'     # never put it in a file in this repo
+```
+
+```bash
+applybot send --yes         # SMTP over SSL (465); daily cap + spacing; copies to Sent via IMAP
+applybot replies            # read-only IMAP poll -> match replies -> classify -> draft
+applybot inbox              # replies waiting for you ("needs_you" = yours to answer)
+applybot inbox 3            # read one, with its draft
+applybot reply-edit 3       # write/fix the reply in $EDITOR
+applybot reply 3 --yes      # send it, threaded (dry-run without --yes)
+```
+
+Replies are matched by Message-ID threading to mail applybot sent, so the rest
+of your inbox is never read into the database. Anything mentioning salary,
+rates, notice period, availability, visa/authorisation or relocation is
+escalated to `needs_you` and never drafted. Recruiters who write to you first
+are not handled yet.
+
+## Design rules
+
+- The LLM extracts; plain code decides (`scoring.decide`). A high score can
+  never hide an unmet disqualifying requirement.
+- "Met" only counts if the basis is real: independent-project experience does
+  not satisfy "professional experience".
+- Unmapped family, selective family, on-site, unclear Portugal eligibility,
+  unconfirmable hard requirement: always human review.
+- Letters: only `facts.yaml`; every number must appear in facts or the posting;
+  a second LLM pass checks each claim. Failing letters are `needs_edit`.
+- Never auto-answers application-form questions on years, certifications,
+  clearance or work authorisation.
+- `auto_send_enabled` is false. `auto_eligible` is a label for now.
+
+## Not built yet
+
+- ATS form filling (headless Playwright), most postings have no email address.
+- Reading recruiter replies and drafting responses.
+- Verified live source adapters (parsers are tested against documented shapes only).
+- HN "Who is hiring" source.
