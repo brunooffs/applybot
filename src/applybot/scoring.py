@@ -64,7 +64,7 @@ class Verdict:
 def build_user_prompt(job: Job, cfg) -> str:
     max_chars = cfg.settings.get("pipeline", {}).get("max_description_chars", 12000)
     facts = {k: cfg.facts.get(k) for k in ("experience", "skills", "not_claimed", "independent_projects", "leadership",
-                                           "certifications", "education",
+                                           "certifications", "education", "engineering_practices",
                                            "availability", "work_authorisation", "language_levels")
              if cfg.facts.get(k) is not None}
     ident = cfg.facts.get("identity") or {}   # only what matters for fit; no contact details

@@ -95,3 +95,69 @@ def test_no_revision_is_attempted_when_the_checker_itself_failed(cfg):
 def test_verify_flags_placeholder(cfg):
     issues = verify_letter(FakeLLM(), {"subject": "s", "body": "Dear [Hiring Manager], 20+ years"}, JOB, cfg)
     assert any("placeholder" in i for i in issues)
+
+
+class _Cfg:
+    facts = {"not_claimed": ["C# / .NET", "Java / Spring", "Formal people management"]}
+
+
+def test_not_claimed_guard_flags_listed_tech_only():
+    from applybot.drafting import not_claimed_guard
+    assert not_claimed_guard("I like JavaScript, Node.js and Python.", _Cfg) == []   # JavaScript is not Java
+    bad = not_claimed_guard("Happy to work with Java/Spring Boot and C#.", _Cfg)
+    assert any("'Java'" in b for b in bad) and any("'Spring'" in b for b in bad) and any("'C#'" in b for b in bad)
+
+
+def _seed_letters(tmp_path, rows):
+    import json
+    import shutil
+    from applybot import db
+    from applybot.config import load_config
+    root = load_config().root
+    home = tmp_path / "home"
+    shutil.copytree(root / "config", home / "config")
+    shutil.copytree(root / "cvs", home / "cvs")
+    cfg = load_config(home)
+    conn = db.connect(cfg.path("db"))
+    for i, (status, issues, edited, lang, cv, letter) in enumerate(rows):
+        jid = f"t:{i}"
+        conn.execute("INSERT INTO jobs (id, source, company, title, status) VALUES (?,?,?,?, 'scored')", (jid, "t", "Acme", "Eng"))
+        conn.execute("INSERT INTO scores (job_id, cv_id, language) VALUES (?,?,?)", (jid, cv, lang))
+        conn.execute("INSERT INTO applications (job_id, status, subject, letter, verification, updated_at) VALUES (?,?,?,?,?,?)",
+                     (jid, status, "s", letter, json.dumps({"issues": issues, "edited_by_human": edited}), f"2026-11-0{i + 1}"))
+    conn.commit()
+    conn.close()
+    return cfg
+
+
+def test_examples_use_only_clean_approved_letters_in_same_language(tmp_path):
+    from applybot.drafting import approved_examples
+    cfg = _seed_letters(tmp_path, [
+        ("sent", [], False, "en", "senior-backend", "SENT-OK"),
+        ("approved", ["unsupported claim: x"], False, "en", "senior-backend", "FORCED-BAD"),
+        ("approved", ["unsupported claim: x"], True, "en", "senior-backend", "EDITED-FIXED"),
+        ("drafted", [], False, "en", "senior-backend", "NOT-APPROVED"),
+        ("sent", [], False, "pt", "senior-backend", "WRONG-LANGUAGE"),
+    ])
+    got = approved_examples(cfg, JOB, "en", n=5)
+    assert set(got) == {"SENT-OK", "EDITED-FIXED"}
+    assert got[0] == "SENT-OK"                       # sent before merely approved
+
+
+def test_examples_can_be_turned_off_and_never_break_drafting(tmp_path):
+    from applybot.drafting import approved_examples, draft_letter
+    cfg = _seed_letters(tmp_path, [("sent", [], False, "en", "senior-backend", "SENT-OK")])
+    assert approved_examples(cfg, JOB, "en", n=0) == []
+    blocker = tmp_path / "a_file"
+    blocker.write_text("x")
+    cfg.settings["paths"]["db"] = str(blocker / "none.db")          # parent is a file: store unreadable, no crash
+    assert approved_examples(cfg, JOB, "en") == []
+    seen = {}
+
+    class Spy(FakeLLM):
+        def complete_json(self, system, user):
+            seen["user"] = user
+            return {"subject": "s", "body": "b"}
+    cfg2 = _seed_letters(tmp_path / "b", [("sent", [], False, "en", "senior-backend", "SENT-OK")])
+    draft_letter(Spy(), JOB, "en", cfg2)
+    assert "STYLE EXAMPLES" in seen["user"] and "SENT-OK" in seen["user"]

@@ -35,6 +35,20 @@ def _check(r: httpx.Response, who: str) -> None:
         raise LLMAPIError(f"{who} returned {r.status_code}: {r.text[:500]}")
 
 
+def _post(who: str, url: str, timeout: float, **kw) -> httpx.Response:
+    """httpx.post with failures turned into messages that say which provider and what to do."""
+    try:
+        return httpx.post(url, timeout=timeout, **kw)
+    except httpx.TimeoutException:
+        hint = ("The model is slow or still loading. Try again, check `ollama ps`, move this stage to anthropic on the Models page, "
+                "or raise llm.ollama.timeout_seconds in settings.yaml." if who == "Ollama"
+                else "Try again; if it keeps happening, raise llm.anthropic.timeout_seconds in settings.yaml.")
+        raise LLMAPIError(f"{who} did not answer within {int(timeout)} seconds. {hint}") from None
+    except httpx.ConnectError:
+        raise LLMAPIError(f"could not connect to {who} at {url}. "
+                          + ("Is Ollama running (`ollama serve`)?" if who == "Ollama" else "Check your internet connection.")) from None
+
+
 PROVIDERS = ("ollama", "anthropic")
 STAGES = ("score", "draft", "revise", "verify", "reply")
 
@@ -79,8 +93,8 @@ class LLM:
     def _raw(self, system: str, user: str) -> str:
         if self.provider == "ollama":
             c = self.cfg["ollama"]
-            r = httpx.post(
-                f"{c['host']}/api/chat",
+            r = _post(
+                "Ollama", f"{c['host']}/api/chat", c.get("timeout_seconds", 300),
                 json={
                     "model": c["model"],
                     "stream": False,
@@ -91,7 +105,6 @@ class LLM:
                         {"role": "user", "content": user},
                     ],
                 },
-                timeout=300,
             )
             _check(r, "Ollama")
             return r.json()["message"]["content"]
@@ -110,11 +123,10 @@ class LLM:
             # model"), so it is only sent if you set llm.anthropic.temperature.
             if c.get("temperature") is not None:
                 body["temperature"] = c["temperature"]
-            r = httpx.post(
-                "https://api.anthropic.com/v1/messages",
+            r = _post(
+                "Anthropic API", "https://api.anthropic.com/v1/messages", c.get("timeout_seconds", 120),
                 headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
                 json=body,
-                timeout=120,
             )
             _check(r, "Anthropic API")
             return "".join(b.get("text", "") for b in r.json()["content"])

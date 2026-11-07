@@ -87,3 +87,15 @@ def test_rewrite_goes_to_the_revise_model(cfg):
     job = Job(source="t", ext_id="1", company="Co", title="Dev", url="", description="x")
     revise_letter(Router(), job, "en", cfg, {"subject": "S", "body": "old"}, ["unsupported claim: x"])
     assert log == ["revise"]
+
+
+def test_timeout_becomes_a_readable_error_naming_the_provider(monkeypatch):
+    import httpx
+    from applybot import llm as llm_mod
+
+    def boom(*a, **k):
+        raise httpx.ReadTimeout("timed out")
+    monkeypatch.setattr(llm_mod.httpx, "post", boom)
+    settings = {"llm": {"provider": "ollama", "ollama": {"host": "http://x", "model": "m", "timeout_seconds": 7}, "anthropic": {"model": "c"}}}
+    with pytest.raises(LLMAPIError, match=r"Ollama did not answer within 7 seconds"):
+        llm_mod.LLM(settings).complete_json("s", "u")

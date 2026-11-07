@@ -4,8 +4,11 @@ from applybot.config import load_config
 
 
 @pytest.fixture(scope="session")
-def cfg():
-    return load_config()
+def cfg(tmp_path_factory):
+    c = load_config()
+    # Never let a test touch the real database (letter history is written during drafting).
+    c.settings["paths"]["db"] = str(tmp_path_factory.mktemp("db") / "test.sqlite")
+    return c
 
 
 def make_raw(**over):

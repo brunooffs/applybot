@@ -406,3 +406,75 @@ def test_saved_try_cannot_overwrite_an_approved_one(env):
     web.RESULTS[rid]["saved"] = None                      # pretend we are on the result page again
     _, _, again = req(env, "POST", "/try/save", {"r": rid})
     assert "already+approved" in again
+
+
+def test_models_page_lists_all_stages_and_saves(env):
+    code, page, _ = req(env, "GET", "/settings")
+    assert code == 200 and all(f'name="{s}"' in page for s in ("score", "draft", "revise", "verify", "reply"))
+    path = env.home / "config" / "settings.yaml"
+    before = path.read_text()
+    code, _, loc = req(env, "POST", "/settings/save",
+                       {"score": "anthropic", "draft": "ollama", "revise": "anthropic", "verify": "anthropic", "reply": "ollama"})
+    assert code == 303 and "ok=" in loc
+    after = path.read_text()
+    import yaml
+    assert yaml.safe_load(after)["llm"]["stages"] == {"score": "anthropic", "draft": "ollama", "revise": "anthropic",
+                                                       "verify": "anthropic", "reply": "ollama"}
+    assert "# Runtime settings." in after and "daily_cap" in after            # comments and other sections untouched
+    assert (env.home / "config" / "settings.yaml.bak").read_text() == before
+    import re
+    assert re.search(r'name="score">.*?value="anthropic" selected', req(env, "GET", "/settings")[1])   # no restart needed
+
+
+def test_models_save_rejects_unknown_provider_and_changes_nothing(env):
+    path = env.home / "config" / "settings.yaml"
+    before = path.read_text()
+    code, _, loc = req(env, "POST", "/settings/save",
+                       {"score": "gpt", "draft": "ollama", "revise": "ollama", "verify": "ollama", "reply": "ollama"})
+    assert code == 303 and "err=" in loc and path.read_text() == before
+
+
+def test_save_stages_inserts_block_when_missing(tmp_path):
+    from applybot import actions
+    from applybot.config import Config
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "settings.yaml").write_text("llm:\n  provider: ollama\n  temperature: 0\n\nmail:\n  daily_cap: 15\n")
+    cfg = Config(tmp_path, {}, {}, {}, {}, {}, [])
+    actions.save_stages(cfg, {s: "ollama" for s in ("score", "draft", "revise", "verify", "reply")})
+    import yaml
+    d = yaml.safe_load((tmp_path / "config" / "settings.yaml").read_text())
+    assert d["llm"]["stages"]["verify"] == "ollama" and d["mail"] == {"daily_cap": 15} and d["llm"]["provider"] == "ollama"
+
+
+def test_history_records_try_drafts_edits_and_shows_diff(env):
+    import re
+    code, page, loc = run_try(env, {"posting": "Senior Backend Engineer at Acme. " + "Node.js role. " * 40, "company": "Acme"})
+    assert code == 200
+    conn = env.conn()
+    rows = conn.execute("SELECT kind, job_id FROM letter_versions ORDER BY id").fetchall()
+    assert [r["kind"] for r in rows][:1] == ["draft"]       # recorded although never added to the review queue
+    assert conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0] == 0
+    jid = rows[0]["job_id"]
+    hist = req(env, "GET", "/history")[1]
+    assert "Acme" in hist and "not saved" in hist
+    jobpage = req(env, "GET", "/history?" + urlencode({"job": jid}))[1]
+    assert "first draft" in jobpage
+    # an edit after saving to the queue shows up as a new version with a visible change
+    rid = re.search(r"r=([A-Za-z0-9_-]+)", loc).group(1)
+    assert req(env, "POST", "/try/save", {"r": rid})[0] == 303
+    req(env, "POST", "/job/action", {"id": jid, "action": "save", "subject": "S", "letter": "Totally new letter text <b>x</b>"})
+    jobpage = req(env, "GET", "/history?" + urlencode({"job": jid}))[1]
+    assert "edited by you" in jobpage and "<ins>" in jobpage and "<b>x</b>" not in jobpage   # escaped, not injected
+
+
+def test_history_unknown_job_is_404(env):
+    assert req(env, "GET", "/history?job=nope")[0] == 404
+
+
+def test_history_records_what_was_sent(env):
+    jid = seed(env)
+    approve(env, jid)
+    code, _, loc = req(env, "POST", "/send", {"id": jid})
+    assert code == 303
+    kinds = [r["kind"] for r in env.conn().execute("SELECT kind FROM letter_versions WHERE job_id=?", (jid,))]
+    assert kinds[-1] == "sent"

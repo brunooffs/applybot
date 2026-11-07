@@ -93,7 +93,10 @@ def cmd_edit(args):
         path = f.name
     subprocess.call([os.environ.get("EDITOR", "nano"), path])
     text = Path(path).read_text(encoding="utf-8").strip()
-    db.save_application(conn, job["id"], "drafted", app["subject"], text, {"issues": [], "edited_by_human": True})
+    try:
+        actions.save_letter(conn, job["id"], app["subject"], text)   # same path as the dashboard; also records history
+    except actions.ActionError as e:
+        raise SystemExit(str(e))
     print("saved; marked as human-edited")
 
 

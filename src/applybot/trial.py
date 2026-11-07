@@ -8,6 +8,7 @@ from __future__ import annotations
 import time
 
 from .drafting import draft_checked
+from . import history
 from .models import Job
 from .scoring import DIMENSIONS, effective_status, score_job
 
@@ -57,7 +58,7 @@ def analyse(llm, cfg, job: Job, letter: bool = True) -> dict:
         return res
     lang = verdict.language if verdict.language in LANGS else "en"
     t1 = time.time()
-    draft, issues, revisions = draft_checked(llm, job, lang, cfg)
+    draft, issues, revisions = draft_checked(llm, job, lang, cfg, record=history.recorder(cfg, job, llm))
     res["letter_state"] = "done"
     res["letter"] = {"lang": lang, "subject": draft["subject"], "body": draft["body"],
                      "issues": list(issues), "revisions": revisions}

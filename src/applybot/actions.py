@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import email.utils
 import hashlib
+import os
+import re
+import yaml
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import db, mailer, packets
+from . import db, history, mailer, packets
 
 
 class ActionError(RuntimeError):
@@ -46,6 +49,10 @@ def save_letter(conn, job_id: str, subject: str, letter: str) -> None:
         raise ActionError("the letter is empty")
     db.save_application(conn, job_id, "drafted", subject.strip() or app["subject"], letter,
                         {"issues": [], "edited_by_human": True})
+    try:
+        history.add(conn, job_id, job["company"], job["title"], "edit", subject.strip() or app["subject"], letter, [])
+    except Exception:
+        pass
 
 
 def approve(cfg, conn, job_id: str, force: bool = False) -> Path:
@@ -148,6 +155,10 @@ def deliver_application(cfg, conn, prep: Prepared) -> str:
                     from_addr=mail["username"], to_addr=prep.to,
                     subject=prep.app["subject"], body=prep.app["letter"], status="sent")
     db.set_application_status(conn, prep.job["id"], "sent")
+    try:
+        history.add(conn, prep.job["id"], prep.job["company"], prep.job["title"], "sent", prep.app["subject"], prep.app["letter"], [])
+    except Exception:
+        pass
     mailer.save_to_sent(mail, prep.msg)
     return reply
 
@@ -193,3 +204,53 @@ def deliver_reply(cfg, conn, m, to: str, msg) -> None:
     conn.execute("UPDATE messages SET status='replied' WHERE id=?", (m["id"],))
     conn.commit()
     mailer.save_to_sent(mail, msg)
+
+
+def save_stages(cfg, mapping: dict[str, str]) -> None:
+    """Write llm.stages into config/settings.yaml, leaving every other line and comment alone.
+
+    Only the `stages:` block is replaced (all five stages written out, so nothing is left to
+    inherit by accident). The old file is kept as settings.yaml.bak, the new text is parsed
+    back and compared before it replaces the file, and the write is atomic."""
+    from .llm import PROVIDERS, STAGES
+    bad = {k: v for k, v in mapping.items() if k not in STAGES or v not in PROVIDERS}
+    missing = [k for k in STAGES if k not in mapping]
+    if bad or missing:
+        raise ActionError(f"invalid model choice: {bad or ''} {('missing: ' + ', '.join(missing)) if missing else ''}".strip())
+    path = cfg.root / "config" / "settings.yaml"
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    block = ["  stages:"] + [f"    {k}: {mapping[k]}" for k in STAGES]
+    start = next((i for i, l in enumerate(lines) if re.match(r"^  stages:\s*(#.*)?$", l)), None)
+    if start is None:
+        llm_at = next((i for i, l in enumerate(lines) if re.match(r"^llm:\s*(#.*)?$", l)), None)
+        if llm_at is None:
+            raise ActionError("settings.yaml has no 'llm:' section to put the stages in")
+        end = len(lines)
+        for i in range(llm_at + 1, len(lines)):
+            if lines[i].strip() and not lines[i].startswith(" "):
+                end = i
+                break
+        while end > llm_at + 1 and not lines[end - 1].strip():
+            end -= 1
+        new = lines[:end] + block + lines[end:]
+    else:
+        end = start + 1
+        while end < len(lines) and (not lines[end].strip() or lines[end].startswith("    ")):
+            end += 1
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        new = lines[:start] + block + lines[end:]
+    out = "\n".join(new) + ("\n" if text.endswith("\n") else "")
+    try:
+        parsed = yaml.safe_load(out)
+        ok = parsed["llm"]["stages"] == {k: mapping[k] for k in STAGES}
+        same_rest = {k: v for k, v in parsed.items() if k != "llm"} == {k: v for k, v in yaml.safe_load(text).items() if k != "llm"}
+    except Exception as e:
+        raise ActionError(f"refused to write settings.yaml, the result would not parse: {e}")
+    if not (ok and same_rest):
+        raise ActionError("refused to write settings.yaml, the result did not match what was chosen")
+    path.with_suffix(".yaml.bak").write_text(text, encoding="utf-8")
+    tmp = path.with_suffix(".yaml.tmp")
+    tmp.write_text(out, encoding="utf-8")
+    os.replace(tmp, path)

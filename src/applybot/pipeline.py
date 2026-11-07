@@ -6,6 +6,7 @@ import logging
 
 from . import db
 from .drafting import draft_checked
+from . import history
 from .models import Job
 from .prefilter import prefilter
 from .scoring import score_job
@@ -70,7 +71,7 @@ def draft_pending(conn, cfg, llm, limit: int | None = None) -> dict:
         if lang not in {"pt", "en", "es", "fr", "nl"}:
             lang = "en"
         try:
-            letter, issues, revisions = draft_checked(llm, job, lang, cfg)
+            letter, issues, revisions = draft_checked(llm, job, lang, cfg, record=history.recorder(cfg, job, llm))
         except Exception as e:
             log.warning("drafting %s failed: %s", job.id, e)
             stats["errors"] += 1

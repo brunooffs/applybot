@@ -36,6 +36,17 @@ CREATE TABLE IF NOT EXISTS applications (
   packet_dir TEXT,
   created_at TEXT, updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS letter_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id TEXT NOT NULL,                     -- no foreign key: tries you never saved are recorded too
+  company TEXT, title TEXT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,                       -- draft | revision | edit | sent
+  models TEXT,                              -- which models wrote/checked it, as shown in the results
+  subject TEXT, body TEXT,
+  issues TEXT                               -- JSON list of fact-check issues at that moment
+);
+CREATE INDEX IF NOT EXISTS letter_versions_job ON letter_versions(job_id, id);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id TEXT UNIQUE NOT NULL,

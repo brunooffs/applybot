@@ -16,6 +16,7 @@ from __future__ import annotations
 import collections
 import html
 import json
+import os
 import secrets
 import sys
 import threading
@@ -25,7 +26,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
-from . import actions, db, replies, trial
+from . import actions, db, history, replies, trial
 from .config import load_config
 from .llm import LLM
 from .models import Job
@@ -101,18 +102,23 @@ pre{white-space:pre-wrap;word-wrap:break-word;margin:0;font-family:ui-monospace,
 .req{display:grid;grid-template-columns:28px 1fr;gap:2px 8px;padding:9px 0;border-bottom:1px solid var(--line)}.req:last-child{border-bottom:0}
 .ico{font-weight:700;font-size:17px;line-height:1.3;text-align:center}.ico.ok{color:var(--ok)}.ico.bad{color:var(--bad)}.ico.warn{color:var(--warn)}
 .req .q{font-style:italic;color:var(--mut);font-size:13px}.req .note{font-size:12.5px;color:var(--warn)}
+ins{background:rgba(46,160,67,.2);text-decoration:none}del{background:rgba(220,53,69,.2)}
 .letter{font-family:Georgia,'Times New Roman',serif;font-size:15.5px;line-height:1.65;white-space:pre-wrap}
 .banner{padding:10px 14px;border-radius:6px;border:1px solid;margin-bottom:12px}.banner.ok{color:var(--ok);border-color:var(--ok)}.banner.bad{color:var(--bad);border-color:var(--bad)}
 details{margin:10px 0}summary{cursor:pointer;color:var(--mut)}ul{margin:6px 0;padding-left:20px}.issue{color:var(--bad)}
 """
 
 NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("review", "/queue", "Review"),
-       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"))
+       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("settings", "/settings", "Models"))
 
 
 def active_for(path: str, q: dict) -> str:
     if path == "/try":
         return "try"
+    if path == "/settings":
+        return "settings"
+    if path == "/history":
+        return "history"
     if path in ("/inbox", "/message", "/reply"):
         return "inbox"
     if path in ("/queue", "/job", "/send"):
@@ -478,6 +484,93 @@ def page_send(ctx, q):
     return "Send", body
 
 
+STAGE_HELP = {
+    "score": "Reads the posting and rates the fit. A stronger model gives steadier scores.",
+    "draft": "Writes the first version of the letter.",
+    "revise": "Rewrites a letter after the fact-check flagged claims.",
+    "verify": "The fact-check that stops invented claims. Worth a strong model.",
+    "reply": "Classifies recruiter replies and drafts answers.",
+}
+
+
+def page_settings(ctx, q):
+    from .llm import PROVIDERS, STAGES
+    cfg, tok = ctx["cfg"], ctx["tok"]
+    llm = cfg.settings.get("llm", {})
+    default, stages = llm.get("provider", "ollama"), llm.get("stages") or {}
+    models = {"ollama": (llm.get("ollama") or {}).get("model", "?"), "anthropic": (llm.get("anthropic") or {}).get("model", "?")}
+    rows = ""
+    for st in STAGES:
+        cur = stages.get(st, default)
+        opts = "".join(f'<option value="{p}"{" selected" if p == cur else ""}>{p} ({esc(models[p])})</option>' for p in PROVIDERS)
+        rows += (f'<tr><td><b>{st}</b><div class="mut" style="font-size:12.5px">{esc(STAGE_HELP[st])}</div></td>'
+                 f'<td><select name="{st}">{opts}</select></td></tr>')
+    warn = ""
+    if "anthropic" in {stages.get(s, default) for s in STAGES} and not os.environ.get("ANTHROPIC_API_KEY"):
+        warn = ("<div class='banner bad'>A stage uses anthropic but ANTHROPIC_API_KEY is not set in the environment "
+                "this server was started from. Those stages will fail until you export it and restart.</div>")
+    body = ("<h1>Models</h1><p class='sub'>Which model handles each stage. Applies to the next action, no restart needed. "
+            "Anthropic stages send the posting and your facts to the Anthropic API; Ollama stays on this machine.</p>"
+            f"{warn}<form method='post' action='/settings/save'>{hidden(tok)}<div class='card'><table>{rows}</table></div>"
+            "<p><button class='pri'>Save</button> <span class='mut'>Only the <code>llm.stages</code> block of settings.yaml is changed; "
+            "the previous file is kept as <code>settings.yaml.bak</code>.</span></p></form>"
+            f"<p class='mut'>Current: {esc(_models(cfg))}</p>")
+    return "Models", body
+
+
+def do_settings_save(ctx, f):
+    from .llm import STAGES
+    try:
+        actions.save_stages(ctx["cfg"], {s: f.get(s, "") for s in STAGES})
+    except actions.ActionError as e:
+        raise Redirect(link("/settings", err=str(e)))
+    raise Redirect(link("/settings", ok="Saved. The next action uses these models."))
+
+
+KIND_LABEL = {"draft": "first draft", "revision": "automatic revision", "edit": "edited by you", "sent": "sent to the recruiter"}
+
+
+def page_history(ctx, q):
+    conn = ctx["conn"]
+    jid = q.get("job")
+    if not jid:
+        rows = history.postings(conn)
+        trs = "".join(
+            f'<tr><td><a href="{link("/history", job=r["job_id"])}">{esc(r["title"] or r["job_id"])}</a></td>'
+            f'<td>{esc(r["company"] or "")}</td><td class="mut">{r["n"]}</td><td class="mut">{esc((r["last_at"] or "")[:16].replace("T", " "))}</td>'
+            f'<td>{badge(r["status"]) if r["status"] else "<span class=mut>not saved</span>"}</td></tr>' for r in rows)
+        table = (f"<table><tr><th>Posting</th><th>Company</th><th>Versions</th><th>Last</th><th>Status</th></tr>{trs}</table>" if rows
+                 else "<div class='card mut'>No letters yet. Every letter the bot writes, revises, or you edit is recorded here, "
+                      "including tries you never added to the review queue.</div>")
+        return "History", ("<h1>History</h1><p class='sub'>Every version of every letter: the model's drafts, its automatic revisions, "
+                           "your edits, and what was sent.</p>" + table)
+    vs = history.versions(conn, jid)
+    if not vs:
+        raise NotFound()
+    parts, prev = [], None
+    for v in vs:
+        issues = json.loads(v["issues"] or "[]")
+        flag = ("<div class='issue'>" + "<br>".join(esc(i) for i in issues) + "</div>") if issues else (
+            "<div class='mut'>no fact-check issues</div>" if v["kind"] in ("draft", "revision") else "")
+        shown = history.word_diff_html(prev, v["body"]) if prev is not None else esc(v["body"])
+        parts.append(
+            f'<div class="card"><div><b>{esc(KIND_LABEL.get(v["kind"], v["kind"]))}</b> '
+            f'<span class="mut">{esc(v["at"][:16].replace("T", " "))}'
+            f'{" · " + esc(v["models"]) if v["models"] else ""}</span></div>'
+            f'<div class="mut">Subject: {esc(v["subject"])}</div>{flag}'
+            f'<div class="letter" style="margin-top:8px">{shown}</div>'
+            + ('<div class="mut" style="margin-top:6px">Changes against the version before are marked: '
+               '<ins>added</ins> <del>removed</del></div>' if prev is not None else "")
+            + "</div>")
+        prev = v["body"]
+    first = vs[0]
+    head = (f"<h1>{esc(first['title'] or jid)}</h1><p class='sub'>{esc(first['company'] or '')} · "
+            f"<a href='{link('/history')}'>all history</a>"
+            + (f" · <a href='{link('/job', id=jid)}'>open in review</a>" if conn.execute("SELECT 1 FROM applications WHERE job_id=?", (jid,)).fetchone() else "")
+            + "</p>")
+    return "History", head + "".join(parts)
+
+
 def page_inbox(ctx, q):
     conn = ctx["conn"]
     show_all = q.get("all") == "1"
@@ -645,9 +738,9 @@ def do_replies_check(ctx, f):
 
 
 GET_ROUTES = {"/": lambda c, q: page_overview(c), "/try": page_try_view, "/queue": page_queue, "/job": page_job,
-              "/send": page_send, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
+              "/send": page_send, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
 POST_ROUTES = {"/try/save": do_try_save, "/job/action": do_job_action, "/send": do_send, "/message/save": do_message_save,
-               "/reply": do_reply_send, "/replies/check": do_replies_check}
+               "/reply": do_reply_send, "/replies/check": do_replies_check, "/settings/save": do_settings_save}
 
 
 # --- server -------------------------------------------------------------------------------------
