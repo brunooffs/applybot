@@ -262,4 +262,3 @@ def save_stages(cfg, mapping: dict[str, str]) -> None:
     tmp = path.with_suffix(".yaml.tmp")
     tmp.write_text(out, encoding="utf-8")
     os.replace(tmp, path)
-    
