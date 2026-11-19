@@ -89,25 +89,32 @@ def trial_job_id(job) -> str:
     return "manual:" + hashlib.sha1(key).hexdigest()[:10]
 
 
-def save_trial(conn, job, verdict, raw: dict, letter: dict | None) -> str:
+def save_trial(conn, job, verdict, raw: dict, letter: dict | None) -> tuple[str, str]:
     """Put a result from `try` into the review queue exactly as the pipeline would have:
     the job, its score, and the drafted letter (needs_edit if the fact-check failed).
-    Saving the same posting twice updates the same entry."""
+    Saving the same posting twice updates the same entry. If the same company, title and
+    location is already stored under another id (an earlier paste, or a posting the pipeline
+    fetched), the letter is attached to that existing job instead of failing.
+    Returns (application status, id of the job that now holds the letter)."""
     if not letter:
         raise ActionError("this result has no letter to review; run it again without 'score only'")
     if verdict.decision == "reject":
         raise ActionError("rejected jobs are not queued")
-    app = conn.execute("SELECT status FROM applications WHERE job_id=?", (job.id,)).fetchone()
+    job_id = job.id
+    if not conn.execute("SELECT 1 FROM jobs WHERE id=?", (job_id,)).fetchone():
+        if not db.upsert_job(conn, job, "scored"):
+            same = conn.execute("SELECT id FROM jobs WHERE dedupe_key=?", (job.dedupe_key,)).fetchone()
+            if not same:
+                raise ActionError("could not store this job (same company, title and location, but the stored one cannot be found)")
+            job_id = same["id"]
+    app = conn.execute("SELECT status FROM applications WHERE job_id=?", (job_id,)).fetchone()
     if app and app["status"] in ("approved", "sent"):
         raise ActionError(f"this posting is already {app['status']}; it was not overwritten")
-    if not conn.execute("SELECT 1 FROM jobs WHERE id=?", (job.id,)).fetchone():
-        if not db.upsert_job(conn, job, "scored"):
-            raise ActionError("a job with the same company, title and location is already stored")
-    db.save_score(conn, job.id, verdict, raw)
+    db.save_score(conn, job_id, verdict, raw)
     status = "needs_edit" if letter["issues"] else "drafted"
-    db.save_application(conn, job.id, status, letter["subject"], letter["body"],
+    db.save_application(conn, job_id, status, letter["subject"], letter["body"],
                         {"issues": letter["issues"], "revisions": letter["revisions"], "from_try": True})
-    return status
+    return status, job_id
 
 
 # --- sending an application -------------------------------------------------
@@ -254,3 +261,4 @@ def save_stages(cfg, mapping: dict[str, str]) -> None:
     tmp = path.with_suffix(".yaml.tmp")
     tmp.write_text(out, encoding="utf-8")
     os.replace(tmp, path)
+    

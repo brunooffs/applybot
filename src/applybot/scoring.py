@@ -27,6 +27,9 @@ Rules:
 - Levels: production = used in professional systems; project = independent/personal projects only; working = can work with it, limited implementation; familiarity = concepts only; none = no experience.
 - A mandatory requirement phrased as professional experience or years of experience is "met" only if the candidate's basis is "production". Independent-project experience does NOT satisfy "professional experience".
 - Set disqualifying=true for hard requirements: named language fluency the candidate lacks, mandatory technology with years of experience, work authorisation/residency, security clearance, formal people-management experience.
+- A requirement sentence that names two or more technologies ("AWS Lambda and AWS CDK", "Kafka and Flink") must become one entry per technology, with the technology as the requirement text ("AWS Lambda", "AWS CDK"). Judge each against the candidate facts on its own: never mark the whole sentence unmet because one part is unmet, and never mark a part met because a neighbour is.
+- "Met" needs a skill in the candidate facts that names that technology or is a direct equivalent for the same job. General skills such as REST, API gateways or "API design" do NOT meet a named specification, modelling or tooling requirement (TypeSpec, OpenAPI, Terraform, Kafka) unless the facts name that tool or an equivalent tool. If the facts are silent, the status is "unknown", not "met".
+- A named tool is NOT disqualifying when the posting says "or similar", "or comparable", "such as" or only asks for "familiarity", when it is one of many listed technologies, or when the facts show a different tool doing the same job (for example CloudFormation for CDK, or OpenAPI for another API specification tool). Report such a part as "unmet" with disqualifying=false, never as "met": the candidate is then sent to human review instead of being rejected.
 - The job title alone must not inflate scores. Score actual responsibilities.
 - Principal-level roles: score on real responsibilities; organisation-wide influence and architecture governance are not established.
 - portugal_eligible: "yes" if the role can be done from Portugal (remote worldwide/EU/Portugal, B2B allowed, or on-site in Portugal); "no" if it requires residency or work authorisation elsewhere; otherwise "unknown".
@@ -61,6 +64,14 @@ class Verdict:
     contact_email: str | None = None
 
 
+def _family_notes(cfg) -> str:
+    """Optional `families.notes` from profile.yaml: when-to-use hints for any family."""
+    notes = cfg.profile["families"].get("notes")
+    if not notes:
+        return ""
+    return "\n\nFAMILY CHOICE NOTES:\n" + yaml.safe_dump(notes, allow_unicode=True)
+
+
 def build_user_prompt(job: Job, cfg) -> str:
     max_chars = cfg.settings.get("pipeline", {}).get("max_description_chars", 12000)
     facts = {k: cfg.facts.get(k) for k in ("experience", "skills", "not_claimed", "independent_projects", "leadership",
@@ -73,6 +84,7 @@ def build_user_prompt(job: Job, cfg) -> str:
     return (
         "FAMILIES:\n" + "\n".join(f"- {n}" for n in cfg.family_names)
         + "\n\nSELECTIVE FAMILY NOTES:\n" + yaml.safe_dump(cfg.profile["families"]["selective"], allow_unicode=True)
+        + _family_notes(cfg)
         + "\nCANDIDATE FACTS:\n" + yaml.safe_dump(facts, allow_unicode=True, sort_keys=False)
         + "\nCANDIDATE PREFERENCES:\n" + yaml.safe_dump(cfg.profile["preferences"], allow_unicode=True)
         + f"\n\nJOB\nTitle: {job.title}\nCompany: {job.company}\nLocation: {job.location}\n"

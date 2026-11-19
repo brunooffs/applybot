@@ -478,3 +478,33 @@ def test_history_records_what_was_sent(env):
     assert code == 303
     kinds = [r["kind"] for r in env.conn().execute("SELECT kind FROM letter_versions WHERE job_id=?", (jid,))]
     assert kinds[-1] == "sent"
+
+
+def test_saving_attaches_to_existing_job_with_same_company_title_location(env):
+    """An earlier paste (or a fetched posting) holds the same company+title+location under another id.
+    Saving must attach the letter to it and show it in Review, not fail with 'already stored'."""
+    _, _, loc = run_try(env, {"posting": POSTING, "company": "Acme", "title": "Backend Engineer"})
+    rid = loc.split("r=")[1]
+    item = web.get_result(rid)
+    conn = env.conn()
+    other = Job(source="linkedin", ext_id="123", company="Acme", title="Backend Engineer",
+                location=item["job"].location, url="https://x.test", description="older text")
+    assert db.upsert_job(conn, other, "scored")                # stored earlier, no application
+    code, _, jloc = req(env, "POST", "/try/save", {"r": rid})
+    assert code == 303 and "id=linkedin" in jloc and "ok=" in jloc
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+    assert conn.execute("SELECT job_id, status FROM applications").fetchone()["job_id"] == "linkedin:123"
+    assert "Backend Engineer" in req(env, "GET", "/queue")[1]
+
+
+def test_saving_is_refused_if_existing_job_already_approved(env):
+    _, _, loc = run_try(env, {"posting": POSTING, "company": "Acme", "title": "Backend Engineer"})
+    rid = loc.split("r=")[1]
+    item = web.get_result(rid)
+    conn = env.conn()
+    other = Job(source="linkedin", ext_id="9", company="Acme", title="Backend Engineer",
+                location=item["job"].location, url="", description="x")
+    db.upsert_job(conn, other, "scored")
+    db.save_application(conn, other.id, "approved", "s", "b", {})
+    code, _, back = req(env, "POST", "/try/save", {"r": rid})
+    assert "already+approved" in back or "already%20approved" in back or "already approved" in back

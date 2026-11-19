@@ -657,11 +657,11 @@ def do_try_save(ctx, f):
         raise Redirect(link("/try", err="That result is no longer in memory (the server was restarted). Run it again."))
     res = item["res"]
     try:
-        actions.save_trial(ctx["conn"], item["job"], res["verdict"], res["raw"], res["letter"])
+        _, saved_id = actions.save_trial(ctx["conn"], item["job"], res["verdict"], res["raw"], res["letter"])
     except actions.ActionError as e:
         raise Redirect(link("/try", r=rid, err=str(e)))
-    item["saved"] = item["job"].id
-    raise Redirect(link("/job", id=item["job"].id, ok="Added to the review queue. Review the letter, edit if needed, then approve."))
+    item["saved"] = saved_id
+    raise Redirect(link("/job", id=saved_id, ok="Added to the review queue. Review the letter, edit if needed, then approve."))
 
 
 def do_job_action(ctx, f):
