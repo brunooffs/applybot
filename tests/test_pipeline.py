@@ -3,7 +3,6 @@ import json
 from applybot import db, pipeline
 from applybot.models import Job
 from applybot.prefilter import prefilter
-
 from conftest import FakeLLM, make_raw
 
 

@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,9 +17,34 @@ from .llm import LLM
 from .models import Job
 from .sources import iter_jobs
 
+_PERSONAL = ("config/facts.yaml", "config/profile.yaml", "config/settings.yaml", "cvs/cvs.yaml")
+
+
+def cmd_init(args):
+    """Create your own config files from the committed *.example templates (never overwrites)."""
+    root = load_config(args.home).root
+    for rel in _PERSONAL:
+        dst = root / rel
+        src = dst.with_name(dst.name + ".example")
+        if dst.exists():
+            print(f"kept     {rel} (already exists)")
+        elif src.exists():
+            shutil.copy(src, dst)
+            print(f"created  {rel}  <- edit this with YOUR details")
+    print("Next: edit the files above (they are git-ignored), put your CV files in cvs/, "
+          "then run `applybot serve`.")
+
+
+def _require_config(cfg):
+    missing = [n for n in _PERSONAL if not (cfg.root / n).exists()]
+    if missing:
+        raise SystemExit("Missing config: " + ", ".join(missing)
+                         + ". Run `applybot init` to create them from the examples, then edit them.")
+
 
 def _ctx(args):
     cfg = load_config(args.home)
+    _require_config(cfg)
     conn = db.connect(cfg.path("db"))
     return cfg, conn
 
@@ -132,7 +158,8 @@ def cmd_send(args):
             print(f"skip {r['id']}: {e}")
             continue
         if not args.yes:
-            print(f"[dry-run] would send to {prep.to}: {prep.app['subject']} (attach {mailer.attachment_name(prep.cv, cfg.settings["mail"].get("attach_as"))})")
+            shown = mailer.attachment_name(prep.cv, cfg.settings["mail"].get("attach_as"))
+            print(f"[dry-run] would send to {prep.to}: {prep.app['subject']} (attach {shown})")
             continue
         if actions.cap_left(cfg, conn) <= 0:
             print(actions.cap_message(cfg))
@@ -147,6 +174,7 @@ def cmd_send(args):
 def cmd_try(args):
     """Judge one pasted posting. Reads a file, or stdin with '-'. Saves nothing, sends nothing."""
     cfg = load_config(args.home)
+    _require_config(cfg)
     text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
     trial.require_posting_text(text)
     title = args.title or text.strip().splitlines()[0][:120]
@@ -161,8 +189,8 @@ def cmd_selftest(args):
     mail = cfg.settings["mail"]
     to = args.to or mail["username"]
     subject = f"applybot selftest {time.strftime('%Y-%m-%d %H:%M')}"
-    letter = ("Hello,\n\nThis is a test message from applybot. I have 20+ years of experience "
-              "in backend engineering and distributed systems.\n\nBruno Sousa")
+    letter = ("Hello,\n\nThis is a test message from applybot, sent to check that mail delivery "
+              "and reply matching work.\n\n" + (cfg.facts.get("identity") or {}).get("name", "Applicant"))
     att = Path(tempfile.gettempdir()) / "applybot-selftest-cv.txt"
     att.write_text("Placeholder CV attachment for the applybot self-test.\n", encoding="utf-8")
     msg = mailer.build_message(mail["username"], to, subject, letter, att)
@@ -274,6 +302,7 @@ def main(argv=None):
     p.add_argument("--home", default=None, help="project root (default: auto)")
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("init", help="create config/*.yaml from the examples (first-time setup)").set_defaults(fn=cmd_init)
 
     for name, fn, lim in (("ingest", cmd_ingest, False), ("score", cmd_score, True),
                           ("draft", cmd_draft, True), ("run", cmd_run, True)):

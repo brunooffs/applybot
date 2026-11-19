@@ -10,9 +10,10 @@ import email.utils
 import hashlib
 import os
 import re
-import yaml
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 from . import db, history, mailer, packets
 

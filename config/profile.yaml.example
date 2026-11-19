@@ -1,12 +1,13 @@
 # Canonical matching profile (source of truth for scoring).
-# Derived from your profile document. Edit freely.
+# FICTIONAL EXAMPLE: run `applybot init` to copy it to config/profile.yaml
+# (git-ignored), then edit it to describe YOU.
 
-name: Bruno Sousa
-headline: Senior Software Engineer & Architect
-seniority: Senior, with selective Principal-level opportunities
-experience_years: "20+"
+name: Alex Example
+headline: Senior Backend Engineer
+seniority: Senior
+experience_years: "12+"
 home_base: Portugal
-languages: [Portuguese, English, Spanish, French, Dutch]
+languages: [Portuguese, English]
 
 positioning: >
   Senior hands-on software engineer, systems architect and technical leader
@@ -67,8 +68,8 @@ preferences:
   onsite: consider selectively
   relocation: open to discussion
   employment_types: [permanent, b2b, contract, freelance]
-  availability: Actively seeking, immediate income is the current priority
-  salary: Flexible during current search
+  availability: Actively seeking
+  salary: Flexible
   currency: EUR preferred, others accepted
   travel: Consider international travel
 

@@ -10,3 +10,5 @@ __pycache__/
 config/facts.yaml
 config/profile.yaml
 config/settings.yaml
+cvs/cvs.yaml
+.DS_Store

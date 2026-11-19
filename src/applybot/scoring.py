@@ -1,15 +1,14 @@
 """Scoring: the LLM extracts structured judgements, plain code decides.
 
 The LLM never outputs the decision. It reports per-dimension scores, the
-posting's mandatory requirements (with the basis on which Bruno meets them),
+posting's mandatory requirements (with the basis on which the candidate meets them),
 and the working arrangement. `decide()` is deterministic and unit-tested, so
 a high score can never hide a disqualifying requirement.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import re
+from dataclasses import dataclass, field
 
 import yaml
 

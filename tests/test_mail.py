@@ -3,11 +3,10 @@ from email.message import EmailMessage
 import pytest
 
 from applybot import db, mailer, replies
-
 from conftest import FakeLLM
 
-MAIL = {"username": "bruno@gif.pt", "smtp_host": "mail.gif.pt", "smtp_port": 465, "smtp_security": "ssl",
-        "imap_host": "mail.gif.pt", "imap_port": 993, "sent_folder": "INBOX.Sent"}
+MAIL = {"username": "alex@example.com", "smtp_host": "mail.example.com", "smtp_port": 465, "smtp_security": "ssl",
+        "imap_host": "mail.example.com", "imap_port": 993, "sent_folder": "INBOX.Sent"}
 
 
 class Rec:
@@ -33,7 +32,7 @@ def test_port_465_uses_implicit_ssl(monkeypatch):
     monkeypatch.setenv("APPLYBOT_MAIL_PASS", "x")
     monkeypatch.setattr(mailer.smtplib, "SMTP_SSL", Rec("ssl"))
     mailer.smtp_connect(MAIL)
-    assert Rec.calls == [("ssl", "mail.gif.pt", 465), ("login", "bruno@gif.pt")]
+    assert Rec.calls == [("ssl", "mail.example.com", 465), ("login", "alex@example.com")]
 
 
 def test_starttls_mode(monkeypatch):
@@ -51,8 +50,8 @@ def test_missing_password_is_a_clear_error(monkeypatch):
 
 
 def test_message_has_domain_message_id_and_threading():
-    m = mailer.build_message("bruno@gif.pt", "r@acme.com", "Re: Hi", "body", in_reply_to="<a@x>", references="<z@x> <a@x>")
-    assert m["Message-ID"].endswith("@gif.pt>")
+    m = mailer.build_message("alex@example.com", "r@acme.com", "Re: Hi", "body", in_reply_to="<a@x>", references="<z@x> <a@x>")
+    assert m["Message-ID"].endswith("@example.com>")
     assert m["In-Reply-To"] == "<a@x>" and m["References"] == "<z@x> <a@x>"
 
 
@@ -83,27 +82,27 @@ class FakeSMTP:
 def test_send_returns_server_reply_with_queue_id(monkeypatch):
     fake = FakeSMTP()
     monkeypatch.setattr(mailer, "smtp_connect", lambda m: fake)
-    msg = mailer.build_message("bruno@gif.pt", "a@b.com", "s", "hi")
+    msg = mailer.build_message("alex@example.com", "a@b.com", "s", "hi")
     assert mailer.send(MAIL, msg) == "250 OK id=1vABC-0001-XY"
     assert b"\r\n" in fake.sent and b"Subject: s" in fake.sent
 
 
 def test_refused_recipient_raises_with_server_words(monkeypatch):
     monkeypatch.setattr(mailer, "smtp_connect", lambda m: FakeSMTP(rcpt_code=550))
-    msg = mailer.build_message("bruno@gif.pt", "a@b.com", "s", "hi")
+    msg = mailer.build_message("alex@example.com", "a@b.com", "s", "hi")
     with pytest.raises(mailer.SMTPRefused, match="550"):
         mailer.send(MAIL, msg)
 
 
 def _setup_sent(conn):
     conn.execute("INSERT INTO jobs (id, source, company, title, status) VALUES ('t:1','t','Acme','Senior Backend Engineer','scored')")
-    conn.execute("INSERT INTO applications (job_id, status, subject, letter) VALUES ('t:1','sent','App','20+ years of Node.js')")
-    db.save_message(conn, message_id="<out1@gif.pt>", job_id="t:1", direction="out", status="sent")
+    conn.execute("INSERT INTO applications (job_id, status, subject, letter) VALUES ('t:1','sent','App','12+ years of Node.js')")
+    db.save_message(conn, message_id="<out1@example.com>", job_id="t:1", direction="out", status="sent")
 
 
-def _raw_reply(body, in_reply_to="<out1@gif.pt>", mid="<in1@acme.com>"):
+def _raw_reply(body, in_reply_to="<out1@example.com>", mid="<in1@acme.com>"):
     m = EmailMessage()
-    m["From"], m["To"], m["Subject"], m["Message-ID"] = "Rita <rita@acme.com>", "bruno@gif.pt", "Re: App", mid
+    m["From"], m["To"], m["Subject"], m["Message-ID"] = "Rita <rita@acme.com>", "alex@example.com", "Re: App", mid
     if in_reply_to:
         m["In-Reply-To"] = in_reply_to
     m.set_content(body)
@@ -162,7 +161,7 @@ def test_invented_number_in_reply_is_blocked(cfg):
     conn = db.connect(":memory:")
     _setup_sent(conn)
     replies.store_if_reply(conn, replies.parse_incoming(_raw_reply("Tell me about your background.")))
-    llm = FakeLLM(reply={"subject": "", "body": "I have 35 years of experience.\nBruno Sousa"})
+    llm = FakeLLM(reply={"subject": "", "body": "I have 35 years of experience.\nAlex Example"})
     assert replies.process(conn, cfg, llm)["needs_edit"] == 1
 
 
@@ -170,9 +169,9 @@ def test_bounce_is_recognised_without_the_llm_and_marks_application(cfg):
     conn = db.connect(":memory:")
     _setup_sent(conn)
     bounce = EmailMessage()
-    bounce["From"], bounce["To"] = "Mail Delivery System <MAILER-DAEMON@gif.pt>", "bruno@gif.pt"
-    bounce["Subject"], bounce["Message-ID"] = "Mail delivery failed: returning message to sender", "<b1@gif.pt>"
-    bounce["In-Reply-To"] = "<out1@gif.pt>"
+    bounce["From"], bounce["To"] = "Mail Delivery System <MAILER-DAEMON@example.com>", "alex@example.com"
+    bounce["Subject"], bounce["Message-ID"] = "Mail delivery failed: returning message to sender", "<b1@example.com>"
+    bounce["In-Reply-To"] = "<out1@example.com>"
     bounce.set_content("550-5.1.1 The email account that you tried to reach does not exist.")
     assert replies.store_if_reply(conn, replies.parse_incoming(bounce.as_bytes())) == 1
 
@@ -196,15 +195,15 @@ def test_daily_count():
 def test_attach_as_hides_internal_cv_name(tmp_path):
     cv = tmp_path / "technical_lead.pdf"
     cv.write_bytes(b"%PDF-1.4 x")
-    msg = mailer.build_message("bruno@gif.pt", "a@b.com", "s", "hi", cv, attach_as="Bruno-Sousa-CV.pdf")
-    assert [p.get_filename() for p in msg.iter_attachments()] == ["Bruno-Sousa-CV.pdf"]
+    msg = mailer.build_message("alex@example.com", "a@b.com", "s", "hi", cv, attach_as="Alex-Example-CV.pdf")
+    assert [p.get_filename() for p in msg.iter_attachments()] == ["Alex-Example-CV.pdf"]
     assert next(msg.iter_attachments()).get_content_type() == "application/pdf"
 
 
 def test_attach_as_empty_keeps_file_name_and_sanitises(tmp_path):
     cv = tmp_path / "senior-backend.pdf"
     cv.write_bytes(b"%PDF-1.4 x")
-    plain = mailer.build_message("bruno@gif.pt", "a@b.com", "s", "hi", cv)
+    plain = mailer.build_message("alex@example.com", "a@b.com", "s", "hi", cv)
     assert next(plain.iter_attachments()).get_filename() == "senior-backend.pdf"
     assert mailer.attachment_name(cv, "") == "senior-backend.pdf"
-    assert mailer.attachment_name(cv, "../../etc/Bruno CV") == "Bruno CV.pdf"
+    assert mailer.attachment_name(cv, "../../etc/Jane CV") == "Jane CV.pdf"

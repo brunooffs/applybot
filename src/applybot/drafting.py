@@ -24,7 +24,7 @@ Hard rules:
 - Use ONLY information in FACTS. Never invent employers, dates, numbers, technologies, certifications or achievements.
 - Years of experience may only be stated exactly as in facts.experience.total.
 - Do not mention any certification (facts.certifications is the complete list).
-- Waybound, AdLab and the application-modelling platform are independent projects, never employment. Say so if you mention them.
+- Anything under facts.independent_projects is independent work, never employment. Say so if you mention it.
 - Do not claim any skill whose level in FACTS is "none" or that is under not_claimed. Skills at level "project" must be described as project experience, not professional.
 - Do not claim to meet a posting requirement the facts do not support. Prefer to stay silent on it.
 - Never name any technology listed under not_claimed, not even as something to learn or "work with". If the posting wants it, say nothing about it.
