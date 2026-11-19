@@ -1,6 +1,5 @@
 from applybot import trial
 from applybot.models import Job
-
 from conftest import FakeLLM, make_raw
 
 JOB = Job("manual", "try", "Acme", "Senior Backend Engineer", "", "Remote", None, "Node.js role, remote.")

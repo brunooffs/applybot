@@ -1,9 +1,18 @@
 # applybot
 
+[![CI](https://github.com/brunooffs/applybot/actions/workflows/ci.yml/badge.svg)](https://github.com/brunooffs/applybot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Local, review-first job search assistant for one person. Finds postings,
 scores them against a verified profile, picks the right CV, drafts a
 grounded cover letter, fact-checks it, and puts it in a queue for you to
 approve. Nothing is sent without `applybot send --yes`.
+
+Everything runs on your machine. The only network calls are to the job boards
+you list and to the LLM you choose: a fully local one via [Ollama](https://ollama.com)
+(no data leaves your computer), or optionally a hosted API. Your personal data
+(facts, profile, settings, CVs, database) stays in git-ignored files and is
+never part of the repository.
 
 ```
 sources -> prefilter -> LLM extraction -> deterministic decision -> CV pick
@@ -14,7 +23,7 @@ sources -> prefilter -> LLM extraction -> deterministic decision -> CV pick
 Full design, data model, decision rules and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 **Try it without sending anything:** `pbpaste | applybot try -` (macOS: copy a
-job posting first) shows which CV would be chosen, the score and reasons, and
+job posting first; on Linux use `xclip -o | applybot try -`) shows which CV would be chosen, the score and reasons, and
 the drafted letter. It stores and sends nothing.
 
 ## Setup
@@ -22,16 +31,22 @@ the drafted letter. It stores and sends nothing.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # 25 tests, no network needed
+python -m pytest            # no network needed
+applybot init               # creates your own config files from the *.example templates
 ```
 
-1. Edit `config/facts.yaml`: resolve every `TODO` and `CONFIRM`. This file is
-   the only thing letters may draw from.
-2. Put your CVs in `cvs/` (names in `cvs/cvs.yaml`). `applybot cvs` shows what
+The committed `*.example` files describe a fictional candidate. `applybot init`
+copies them to `config/facts.yaml`, `config/profile.yaml`, `config/settings.yaml`
+and `cvs/cvs.yaml`, which are git-ignored. Then:
+
+1. Edit `config/facts.yaml` with YOUR details: resolve every `TODO` and
+   `CONFIRM`. This file is the only thing letters may draw from.
+2. Describe yourself and your target roles in `config/profile.yaml`.
+3. Put your CVs in `cvs/` (names in `cvs/cvs.yaml`). `applybot cvs` shows what
    is missing and which job families have no CV.
-3. Pick the LLM in `config/settings.yaml` (`ollama` local, or `anthropic` with
-   `ANTHROPIC_API_KEY`).
-4. Add company board tokens to `config/sources.yaml`.
+4. Pick the LLM in `config/settings.yaml`: `ollama` (local, fully open source)
+   or `anthropic` (hosted, optional, needs `ANTHROPIC_API_KEY`).
+5. Add company board tokens to `config/sources.yaml`.
 
 ## Daily use
 
@@ -60,7 +75,7 @@ Start it from the terminal where `APPLYBOT_MAIL_PASS` (and `ANTHROPIC_API_KEY`,
 if used) are exported, otherwise sending and "Check replies" will fail. New
 postings still come from `applybot run`.
 
-## Mail (your own server, bruno@gif.pt)
+## Mail (your own SMTP/IMAP account)
 
 Settings are in `config/settings.yaml` under `mail`. The password is only ever
 read from the environment:
@@ -90,7 +105,7 @@ are not handled yet.
   never hide an unmet disqualifying requirement.
 - "Met" only counts if the basis is real: independent-project experience does
   not satisfy "professional experience".
-- Unmapped family, selective family, on-site, unclear Portugal eligibility,
+- Unmapped family, selective family, on-site, unclear location eligibility,
   unconfirmable hard requirement: always human review.
 - Letters: only `facts.yaml`; every number must appear in facts or the posting;
   a second LLM pass checks each claim. Failing letters are `needs_edit`.
@@ -104,3 +119,25 @@ are not handled yet.
 - Reading recruiter replies and drafting responses.
 - Verified live source adapters (parsers are tested against documented shapes only).
 - HN "Who is hiring" source.
+
+## Known limitations
+
+- Built for one candidate based in Portugal/EU: the scoring prompt and the
+  `portugal_eligible` field assume that. Making the home country configurable is
+  a good first contribution.
+- Source adapters (Greenhouse, Lever, Ashby, Remotive) are tested against
+  documented response shapes only, not yet verified against live endpoints.
+- LinkedIn and Indeed are deliberately not supported (terms of service).
+
+## Responsible use
+
+applybot is a drafting and review tool. `auto_send_enabled` is off by default,
+every application goes through your approval, and letters may only state facts
+you wrote in `facts.yaml`. You are responsible for what you send and for
+following each job site's terms of service.
+
+## Contributing and license
+
+Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Report security problems as described in [SECURITY.md](SECURITY.md).
+Released under the [MIT License](LICENSE).

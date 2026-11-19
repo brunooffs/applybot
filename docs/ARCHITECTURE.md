@@ -40,7 +40,7 @@ is always yours to answer.
                      outbox/<job>/  letter.md, job.md, CV copy
                               │
                     send (dry-run by default; --yes to send)
-                    SMTP over SSL → bruno@gif.pt server; copy to Sent via IMAP
+                    SMTP over SSL → your mail server; copy to Sent via IMAP
                               │
                               ▼
           replies: read-only IMAP poll → match by Message-ID threading
@@ -130,7 +130,7 @@ copies that CV into the packet; `send` refuses to send if the file is missing.
 ## 8. What leaves your machine
 
 - Job boards: plain HTTPS GETs of public job data.
-- Your mail server `mail.gif.pt`: SMTP (465) and IMAP (993), TLS.
+- Your mail server (host set in `settings.yaml`): SMTP (465) and IMAP (993), TLS.
 - The LLM provider you choose in `config/settings.yaml`:
   - `ollama`: stays local.
   - `anthropic`: the posting text, your `facts.yaml` and the text of replies

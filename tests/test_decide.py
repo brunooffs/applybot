@@ -1,5 +1,4 @@
 from applybot.scoring import DIMENSIONS, decide, effective_status, weighted_overall
-
 from conftest import make_raw
 
 

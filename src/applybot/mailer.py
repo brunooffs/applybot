@@ -29,7 +29,7 @@ def _password() -> str:
 
 def attachment_name(attachment: Path, attach_as: str | None = None) -> str:
     """The filename the recipient sees. `attach_as` (settings: mail.attach_as) replaces the
-    CV file's own name, so every recruiter gets e.g. Bruno-Sousa-CV.pdf and never sees
+    CV file's own name, so every recruiter gets e.g. Jane-Doe-CV.pdf and never sees
     internal names like technical_lead.pdf. Path parts are stripped; the real file's
     extension is kept if attach_as has none."""
     name = Path((attach_as or "").strip()).name

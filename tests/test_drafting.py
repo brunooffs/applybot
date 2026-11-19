@@ -1,6 +1,5 @@
 from applybot.drafting import numeric_guard, verify_letter
 from applybot.models import Job
-
 from conftest import FakeLLM
 
 JOB = Job(source="x", ext_id="1", company="Acme", title="Senior Backend Engineer", url="u",
@@ -8,11 +7,11 @@ JOB = Job(source="x", ext_id="1", company="Acme", title="Senior Backend Engineer
 
 
 def test_numeric_guard_allows_numbers_from_facts_and_posting():
-    assert numeric_guard("20+ years and 5 years of Node.js", "experience: 20+ years", JOB.description) == []
+    assert numeric_guard("12+ years and 5 years of Node.js", "experience: 12+ years", JOB.description) == []
 
 
 def test_numeric_guard_flags_invented_number():
-    issues = numeric_guard("I have 15 years of experience", "experience: 20+ years", "")
+    issues = numeric_guard("I have 15 years of experience", "experience: 12+ years", "")
     assert len(issues) == 1 and "15" in issues[0]
 
 
@@ -36,7 +35,7 @@ class RevisingLLM(FakeLLM):
             self.last_user = user
             if self.letter_calls == 1:
                 return {"subject": "s", "body": "I have 35 years of Node.js experience."}
-            return {"subject": "s", "body": "I have 20+ years of experience in backend engineering."}
+            return {"subject": "s", "body": "I have 12+ years of experience in backend engineering."}
         return super().complete_json(system, user)
 
 
@@ -45,7 +44,7 @@ def test_failed_letter_is_revised_with_the_flagged_claims(cfg):
     llm = RevisingLLM()
     letter, issues, used = draft_checked(llm, JOB, "en", cfg)
     assert used == 1 and issues == []
-    assert "20+ years" in letter["body"]
+    assert "12+ years" in letter["body"]
     assert "PROBLEMS FOUND" in llm.last_user and "35" in llm.last_user   # the feedback reached the model
 
 
@@ -81,7 +80,7 @@ class BrokenChecker(FakeLLM):
 
 def test_unreadable_checker_fails_closed_instead_of_crashing(cfg):
     from applybot.drafting import UNVERIFIED
-    issues = verify_letter(BrokenChecker(), {"subject": "s", "body": "20+ years of Node.js."}, JOB, cfg)
+    issues = verify_letter(BrokenChecker(), {"subject": "s", "body": "12+ years of Node.js."}, JOB, cfg)
     assert issues and issues[0].startswith(UNVERIFIED)
 
 
@@ -93,7 +92,7 @@ def test_no_revision_is_attempted_when_the_checker_itself_failed(cfg):
 
 
 def test_verify_flags_placeholder(cfg):
-    issues = verify_letter(FakeLLM(), {"subject": "s", "body": "Dear [Hiring Manager], 20+ years"}, JOB, cfg)
+    issues = verify_letter(FakeLLM(), {"subject": "s", "body": "Dear [Hiring Manager], 12+ years"}, JOB, cfg)
     assert any("placeholder" in i for i in issues)
 
 
@@ -111,6 +110,7 @@ def test_not_claimed_guard_flags_listed_tech_only():
 def _seed_letters(tmp_path, rows):
     import json
     import shutil
+
     from applybot import db
     from applybot.config import load_config
     root = load_config().root

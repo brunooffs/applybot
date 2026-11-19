@@ -10,9 +10,10 @@ import email.utils
 import hashlib
 import os
 import re
-import yaml
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 from . import db, history, mailer, packets
 
@@ -261,4 +262,3 @@ def save_stages(cfg, mapping: dict[str, str]) -> None:
     tmp = path.with_suffix(".yaml.tmp")
     tmp.write_text(out, encoding="utf-8")
     os.replace(tmp, path)
-    

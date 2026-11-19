@@ -91,6 +91,7 @@ def test_rewrite_goes_to_the_revise_model(cfg):
 
 def test_timeout_becomes_a_readable_error_naming_the_provider(monkeypatch):
     import httpx
+
     from applybot import llm as llm_mod
 
     def boom(*a, **k):

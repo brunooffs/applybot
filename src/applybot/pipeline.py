@@ -1,12 +1,10 @@
 """Glue: ingest -> score -> draft. Each stage is idempotent and resumable."""
 from __future__ import annotations
 
-import json
 import logging
 
-from . import db
+from . import db, history
 from .drafting import draft_checked
-from . import history
 from .models import Job
 from .prefilter import prefilter
 from .scoring import score_job

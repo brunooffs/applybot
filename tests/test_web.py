@@ -11,7 +11,6 @@ from applybot import actions, db, mailer, web
 from applybot.config import load_config
 from applybot.models import Job
 from applybot.scoring import Verdict
-
 from conftest import FakeLLM, make_raw
 
 POSTING = "Senior backend engineer, remote in the EU. " * 8
@@ -69,7 +68,7 @@ def seed(env, status="drafted", contact="hr@acme.test", title="Senior Backend En
     db.upsert_job(conn, job, "scored")
     v = Verdict("Senior Backend Engineer", cv, 90.0, "auto_eligible", ["strong match, no flags"], "en", contact)
     db.save_score(conn, job.id, v, make_raw())
-    db.save_application(conn, job.id, status, "Application: Backend", "Hello,\nI build backends.\nBruno Sousa",
+    db.save_application(conn, job.id, status, "Application: Backend", "Hello,\nI build backends.\nAlex Example",
                         {"issues": issues or []})
     conn.close()
     return job.id
@@ -155,7 +154,7 @@ def test_try_shows_model_errors_instead_of_crashing(env, monkeypatch):
 def test_approve_clean_draft(env):
     jid = seed(env)
     code, _, loc = req(env, "POST", "/job/action", {"id": jid, "action": "approve",
-                                                  "subject": "Application: Backend", "letter": "Hello,\r\nI build backends.\r\nBruno Sousa"})
+                                                  "subject": "Application: Backend", "letter": "Hello,\r\nI build backends.\r\nAlex Example"})
     assert code == 303 and "ok=" in loc
     assert status_of(env, jid) == "approved"
     assert (env.cfg.path("outbox")).exists()
@@ -165,7 +164,7 @@ def test_failed_factcheck_cannot_be_approved_without_edit_or_force(env):
     jid = seed(env, status="needs_edit", issues=["unsupported claim: led teams"])
     page = req(env, "GET", "/job?" + urlencode({"id": jid}))[1]
     assert "unsupported claim: led teams" in page and 'name="force"' in page
-    letter = "Hello,\nI build backends.\nBruno Sousa"
+    letter = "Hello,\nI build backends.\nAlex Example"
     _, _, loc = req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": letter})
     assert "err=" in loc and status_of(env, jid) == "needs_edit"
     req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": letter, "force": "1"})
@@ -174,11 +173,11 @@ def test_failed_factcheck_cannot_be_approved_without_edit_or_force(env):
 
 def test_editing_the_letter_clears_the_failure(env):
     jid = seed(env, status="needs_edit", issues=["unsupported claim: led teams"])
-    req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "S", "letter": "A fixed letter.\r\nBruno"})
+    req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "S", "letter": "A fixed letter.\r\nAlex"})
     assert status_of(env, jid) == "approved"
     conn = env.conn()
     row = conn.execute("SELECT letter, verification FROM applications WHERE job_id=?", (jid,)).fetchone()
-    assert row["letter"] == "A fixed letter.\nBruno" and "edited_by_human" in row["verification"]
+    assert row["letter"] == "A fixed letter.\nAlex" and "edited_by_human" in row["verification"]
 
 
 def test_reject(env):
@@ -191,7 +190,7 @@ def test_reject(env):
 
 def approve(env, jid):
     req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend",
-                                     "letter": "Hello,\nI build backends.\nBruno Sousa"})
+                                     "letter": "Hello,\nI build backends.\nAlex Example"})
 
 
 def test_send_needs_confirmation_and_sends_once(env):
@@ -258,7 +257,7 @@ def test_draft_that_is_not_approved_cannot_be_sent(env):
 def seed_incoming(env, status="needs_you"):
     conn = env.conn()
     db.save_message(conn, message_id="<in1>", job_id=None, direction="in", parent_id="<out1>",
-                    from_addr="Rita <rita@acme.test>", to_addr="bruno@gif.pt", subject="Quick call?",
+                    from_addr="Rita <rita@acme.test>", to_addr="alex@example.com", subject="Quick call?",
                     body="Can we talk <b>tomorrow</b>?", status=status, category="scheduling", summary="wants a call",
                     reasons=json.dumps(["mentions tomorrow: you answer this one"]))
     n = conn.execute("SELECT id FROM messages WHERE message_id='<in1>'").fetchone()[0]
@@ -273,7 +272,7 @@ def test_inbox_message_and_reply_flow(env):
     assert "&lt;b&gt;tomorrow" in page and "<b>tomorrow</b>" not in page and "you answer this one" in page
     assert "Review and send" not in page                                    # nothing saved yet
     assert "err=" in req(env, "POST", "/reply", {"n": str(n)})[2] and env.sent == []
-    req(env, "POST", "/message/save", {"n": str(n), "subject": "", "body": "Tomorrow works.\r\nBruno"})
+    req(env, "POST", "/message/save", {"n": str(n), "subject": "", "body": "Tomorrow works.\r\nAlex"})
     assert "rita@acme.test" in req(env, "GET", f"/reply?n={n}")[1] and env.sent == []
     code, _, loc = req(env, "POST", "/reply", {"n": str(n)})
     assert code == 303 and len(env.sent) == 1 and env.sent[0]["To"] == "rita@acme.test"
@@ -402,7 +401,7 @@ def test_saved_try_cannot_overwrite_an_approved_one(env):
     rid = loc.split("r=")[1]
     _, _, jloc = req(env, "POST", "/try/save", {"r": rid})
     jid = jloc.split("id=")[1].split("&")[0].replace("%3A", ":")
-    req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "S", "letter": "Hello\nBruno"})
+    req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "S", "letter": "Hello\nAlex"})
     web.RESULTS[rid]["saved"] = None                      # pretend we are on the result page again
     _, _, again = req(env, "POST", "/try/save", {"r": rid})
     assert "already+approved" in again
@@ -422,7 +421,6 @@ def test_models_page_lists_all_stages_and_saves(env):
                                                        "verify": "anthropic", "reply": "ollama"}
     assert "# Runtime settings." in after and "daily_cap" in after            # comments and other sections untouched
     assert (env.home / "config" / "settings.yaml.bak").read_text() == before
-    import re
     assert re.search(r'name="score">.*?value="anthropic" selected', req(env, "GET", "/settings")[1])   # no restart needed
 
 
@@ -447,7 +445,6 @@ def test_save_stages_inserts_block_when_missing(tmp_path):
 
 
 def test_history_records_try_drafts_edits_and_shows_diff(env):
-    import re
     code, page, loc = run_try(env, {"posting": "Senior Backend Engineer at Acme. " + "Node.js role. " * 40, "company": "Acme"})
     assert code == 200
     conn = env.conn()

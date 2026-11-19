@@ -24,7 +24,7 @@ import time
 import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from . import actions, db, history, replies, trial
 from .config import load_config

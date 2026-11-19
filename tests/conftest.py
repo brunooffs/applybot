@@ -1,6 +1,27 @@
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from applybot.config import load_config
+# Hermetic test home: built from the committed *.example files, so the suite never
+# depends on (or touches) a developer's own config, CVs or database.
+_REPO = Path(__file__).resolve().parents[1]
+_HOME = Path(tempfile.mkdtemp(prefix="applybot-test-home-"))
+(_HOME / "config").mkdir()
+(_HOME / "cvs").mkdir()
+for _f in (_REPO / "config").iterdir():
+    _dst = _f.name[:-len(".example")] if _f.name.endswith(".example") else _f.name
+    shutil.copy(_f, _HOME / "config" / _dst)
+shutil.copy(_REPO / "cvs" / "cvs.yaml.example", _HOME / "cvs" / "cvs.yaml")
+os.environ["APPLYBOT_HOME"] = str(_HOME)
+
+from applybot.config import load_config  # noqa: E402
+
+
+def pytest_sessionfinish(session, exitstatus):
+    shutil.rmtree(_HOME, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
@@ -34,11 +55,11 @@ class FakeLLM:
     def __init__(self, score=None, letter=None, verify=None, classify=None, reply=None):
         self.classify = classify or {"category": "info_request", "summary": "asks about stack",
                                      "needs_candidate_decision": False}
-        self.reply = reply or {"subject": "", "body": "Thanks for getting back to me. Happy to share more.\nBruno Sousa"}
+        self.reply = reply or {"subject": "", "body": "Thanks for getting back to me. Happy to share more.\nAlex Example"}
         self.score = score or make_raw()
         self.letter = letter or {"subject": "Application: Senior Backend Engineer",
-                                 "body": "Hello,\nI have 20+ years of experience building backend systems with Node.js.\nBruno Sousa"}
-        self.verify = verify or {"claims": [{"text": "20+ years", "supported": True, "evidence": "facts"}]}
+                                 "body": "Hello,\nI have 12+ years of experience building backend systems with Node.js.\nAlex Example"}
+        self.verify = verify or {"claims": [{"text": "12+ years", "supported": True, "evidence": "facts"}]}
 
     def complete_json(self, system, user):
         if "fact-checker" in system:

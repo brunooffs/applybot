@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import time
 
-from .drafting import draft_checked
 from . import history
+from .drafting import draft_checked
 from .models import Job
 from .scoring import DIMENSIONS, effective_status, score_job
 
