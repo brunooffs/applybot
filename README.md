@@ -1,5 +1,7 @@
 # applybot
-
+<p align="center">
+  <img src="docs/images/meat-proxy.webp" width="760" alt="applybot, a.k.a. The Meat Proxy Proxy: an AI applying for a human job with another AI">
+</p>
 [![CI](https://github.com/brunooffs/applybot/actions/workflows/ci.yml/badge.svg)](https://github.com/brunooffs/applybot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
