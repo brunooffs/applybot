@@ -7,14 +7,14 @@ import pytest
 
 # Hermetic test home: built from the committed *.example files, so the suite never
 # depends on (or touches) a developer's own config, CVs or database.
-_REPO = Path(__file__).resolve().parents[1]
+_DEFAULTS = Path(__file__).resolve().parents[1] / "src" / "applybot" / "defaults"
 _HOME = Path(tempfile.mkdtemp(prefix="applybot-test-home-"))
 (_HOME / "config").mkdir()
 (_HOME / "cvs").mkdir()
-for _f in (_REPO / "config").iterdir():
+for _f in (_DEFAULTS / "config").iterdir():
     _dst = _f.name[:-len(".example")] if _f.name.endswith(".example") else _f.name
     shutil.copy(_f, _HOME / "config" / _dst)
-shutil.copy(_REPO / "cvs" / "cvs.yaml.example", _HOME / "cvs" / "cvs.yaml")
+shutil.copy(_DEFAULTS / "cvs" / "cvs.yaml.example", _HOME / "cvs" / "cvs.yaml")
 os.environ["APPLYBOT_HOME"] = str(_HOME)
 
 from applybot.config import load_config  # noqa: E402

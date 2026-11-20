@@ -18,21 +18,31 @@ from .models import Job
 from .sources import iter_jobs
 
 _PERSONAL = ("config/facts.yaml", "config/profile.yaml", "config/settings.yaml", "cvs/cvs.yaml")
+_EDITABLE = ("config/criteria.yaml", "config/sources.yaml")   # work without a copy (packaged defaults), but you may want to edit them
 
 
 def cmd_init(args):
-    """Create your own config files from the committed *.example templates (never overwrites)."""
+    """Create your own config files from the packaged templates (never overwrites)."""
+    from .config import DEFAULTS
     root = load_config(args.home).root
-    for rel in _PERSONAL:
+    print(f"Your applybot folder: {root}")
+    for d in ("config", "cvs", "data", "outbox"):
+        (root / d).mkdir(parents=True, exist_ok=True)
+    for rel in _PERSONAL + _EDITABLE:
         dst = root / rel
-        src = dst.with_name(dst.name + ".example")
+        src = DEFAULTS / (rel + ".example") if (DEFAULTS / (rel + ".example")).exists() else DEFAULTS / rel
         if dst.exists():
             print(f"kept     {rel} (already exists)")
         elif src.exists():
             shutil.copy(src, dst)
-            print(f"created  {rel}  <- edit this with YOUR details")
-    print("Next: edit the files above (they are git-ignored), put your CV files in cvs/, "
-          "then run `applybot serve`.")
+            print(f"created  {rel}" + ("  <- edit this with YOUR details" if rel in _PERSONAL else ""))
+    print("Next: fill in config/facts.yaml and config/profile.yaml, put your CV files in cvs/, "
+          "then run `applybot doctor` to check the setup and `applybot serve --open` to start.")
+
+
+def cmd_doctor(args):
+    from . import doctor
+    raise SystemExit(doctor.report(load_config(args.home)))
 
 
 def _require_config(cfg):
@@ -305,10 +315,11 @@ def cmd_serve(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="applybot", description="Local, review-first job application assistant")
-    p.add_argument("--home", default=None, help="project root (default: auto)")
+    p.add_argument("--home", default=None, help="your applybot folder (default: $APPLYBOT_HOME, else ~/.applybot)")
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("init", help="create config/*.yaml from the examples (first-time setup)").set_defaults(fn=cmd_init)
+    sub.add_parser("init", help="create your config files from the templates (first-time setup)").set_defaults(fn=cmd_init)
+    sub.add_parser("doctor", help="check the setup, this computer, Ollama and keys; suggest what to install").set_defaults(fn=cmd_doctor)
 
     for name, fn, lim in (("ingest", cmd_ingest, False), ("score", cmd_score, True),
                           ("draft", cmd_draft, True), ("run", cmd_run, True)):

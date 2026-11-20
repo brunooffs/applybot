@@ -59,7 +59,7 @@ is always yours to answer.
 | File | Responsibility |
 |---|---|
 | `cli.py` | All commands; thin glue only. |
-| `config.py` | Loads `config/*.yaml` and `cvs/cvs.yaml` into one `Config`. Family → CV lookup. |
+| `config.py` | Loads `config/*.yaml` and `cvs/cvs.yaml` from your applybot folder (`$APPLYBOT_HOME`, else `~/.applybot`) into one `Config`; criteria and sources fall back to the packaged defaults in `defaults/`. Family → CV lookup. |
 | `models.py` | `Job` dataclass; `dedupe_key` = company + title + location. |
 | `sources/` | One adapter per board type. Each has a pure `parse_job` (unit-tested) and a `fetch`. `__init__.iter_jobs` runs them all and survives a failing board. |
 | `text.py` | HTML → plain text. |
