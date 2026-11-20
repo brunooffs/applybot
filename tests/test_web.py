@@ -589,3 +589,9 @@ def test_run_needs_a_step_and_blocks_missing_anthropic_key(env, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     _, _, loc = req(env, "POST", "/run/start", {"score": "1"})
     assert "err=" in loc and "ANTHROPIC_API_KEY" in loc
+
+
+def test_approved_job_without_email_offers_link_and_copy(env):
+    jid = seed(env, status="approved", contact=None)
+    page = req(env, "GET", "/job?" + urlencode({"id": jid}))[1]
+    assert "Open the application page" in page and "Copy letter" in page and 'id="letter-text"' in page

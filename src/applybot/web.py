@@ -449,11 +449,14 @@ def page_job(ctx, q):
             '<button class="danger" name="action" value="reject">Reject</button></div></form>'
             "<p class='mut'>Saving re-runs the automatic checks (numbers, copied posting wording, not-claimed skills). A letter with remaining flags cannot be approved.</p>")
     else:
-        parts.append(f'<div class="card"><b>{esc(app["subject"] or "")}</b><pre style="margin-top:8px">{esc(app["letter"] or "")}</pre></div>')
+        parts.append(f'<div class="card"><b>{esc(app["subject"] or "")}</b><pre id="letter-text" style="margin-top:8px">{esc(app["letter"] or "")}</pre></div>')
         if st == "approved":
             can_mail = bool(score and score["contact_email"])
+            cv_file = cfg.cv_file(score["cv_id"]) if score and score["cv_id"] else None
             row = (f'<a class="btn pri" href="{link("/send", id=job_id)}">Review and send…</a>' if can_mail else
-                   "<span class='mut'>No email in the posting: apply through the posting, then mark it.</span>")
+                   (f"{safe_link(job['url'], 'Open the application page')} "
+                    "<button type='button' data-copy='#letter-text'>Copy letter</button> "
+                    f"<span class='mut'>Upload {esc(cv_file.name) if cv_file else 'your CV'} (also in the folder below), then mark it.</span>"))
             parts.append(
                 f'<div class="row">{row}'
                 f'<form method="post" action="/job/action" style="display:inline">{hidden(tok, id=job_id)}'
