@@ -1,0 +1,122 @@
+# VERIFIED FACTS. The ONLY source the letter generator and the fact-checker
+# are allowed to use. Anything not here cannot appear in a letter or be
+# answered on an application form.
+#
+# THIS FILE IS A FICTIONAL EXAMPLE ("Alex Example"). Run `applybot init` to copy
+# it to config/facts.yaml (git-ignored), then replace everything with YOUR facts.
+# Be conservative: under-claiming costs you a little, over-claiming costs you
+# credibility. Lines marked CONFIRM are the kind of thing to double-check.
+#
+# Skill levels:
+#   production   used in professional systems
+#   project      independent / personal projects only
+#   working      understand and can work with it, limited implementation
+#   familiarity  concepts and architecture only
+#   none         do not claim
+
+identity:
+  name: Alex Example
+  location: Portugal
+  languages: [Portuguese, English]
+  github: https://github.com/alex-example
+  email: alex@example.com
+  phone: +351 900 000 000          # optional
+  linkedin: https://www.linkedin.com/in/alex-example/       # optional
+
+experience:
+  total: "12+ years"
+  summary: >
+    Backend engineering, API design, cloud infrastructure and distributed
+    systems for product companies.
+  employers:
+    - name: Independent (self-employed developer)
+      roles:
+        - title: Independent Developer
+          dates: 2024 to present
+          stack: [TypeScript, Node.js, PostgreSQL, Docker]
+          work: >
+            Builds and maintains a small SaaS product for appointment
+            scheduling, as sole developer.
+
+    - name: Acme Logistics B.V.
+      notes: Production experience; Scrum Master responsibilities for one year
+      roles:
+        - title: Senior Backend Engineer
+          dates: 2019 to 2024
+          project: Shipment tracking platform
+          stack: [Node.js, TypeScript, NestJS, PostgreSQL, Kubernetes, AWS Lambda, SQS, Terraform]
+          work: Event-driven backend for real-time shipment tracking; REST APIs consumed by partner systems.
+          highlights:
+            - Introduced an idempotency layer for partner webhooks, removing duplicate shipment events
+            - Reduced p95 API latency from 800 ms to 250 ms by moving hot reads to Redis   # example figure
+        - title: Software Engineer
+          dates: 2016 to 2019
+          project: Warehouse management system
+          stack: [Python, Django, PostgreSQL, RabbitMQ]
+          work: Maintained and extended a warehouse management system used by 40+ sites.
+
+    - name: Globex Media
+      roles:
+        - title: Web Developer
+          dates: 2013 to 2016
+          stack: [PHP, MySQL, JavaScript]
+          work: Websites and content management systems for media customers.
+
+  domain: >
+    Logistics and supply-chain software; partner and carrier API integrations.
+
+certifications:
+  - name: AWS Certified Developer - Associate
+    issuer: Amazon Web Services
+    year: 2021
+    note: dated 2021; do not describe as current unless renewed
+
+education:
+  - institution: Example University
+    field: Computer Science
+    degree: TODO   # level, completion status and years: letters must not say "degree" until you set this
+
+skills:
+  backend:        {level: production, items: [Node.js, TypeScript, NestJS, Python, PHP]}
+  frontend:       {level: working,    items: [React]}
+  api:            {level: production, items: [REST, OpenAPI, webhooks]}
+  distributed:    {level: production, items: [Microservices, event-driven architecture, asynchronous messaging]}
+  aws:            {level: production, items: [Lambda, API Gateway, SQS, SNS, DynamoDB]}
+  containers:     {level: production, items: [Docker, Kubernetes]}
+  iac:            {level: production, items: [Terraform]}
+  ci_cd:          {level: production, items: [GitHub Actions, CI/CD]}
+  databases:      {level: production, items: [PostgreSQL, MySQL, Redis]}
+  messaging:      {level: project,    items: [Kafka]}         # CONFIRM
+  observability:  {level: project,    items: [Prometheus, Grafana]}   # CONFIRM
+  os:             {level: production, items: [Linux, command line]}
+
+# Treated as level "none" until you say otherwise. Job requirements for these
+# must never be answered "met" on your behalf.
+not_claimed:
+  - C# / .NET
+  - Java / Spring
+  - Advanced ML engineering
+  - Formal people management
+
+independent_projects:
+  # These are NOT employment. Letters must present them as independent work.
+  - name: SlotBook
+    kind: Product development
+    description: >
+      Small appointment-scheduling SaaS built with TypeScript, Node.js and
+      PostgreSQL.
+    status: In private beta with a handful of users.
+
+leadership:
+  - Technical leadership and mentoring
+  - Cross-functional collaboration with stakeholders and Product Owners
+  - Scrum Master responsibilities at Acme Logistics (one year)
+
+language_levels:
+  Portuguese: Native
+  English: C1 (Advanced)
+
+availability: Immediately; actively seeking
+work_authorisation: >
+  Portugal-based. No visa or work permit needed in any EU member state.
+  For anywhere else, the candidate answers personally, never the bot.

@@ -8,6 +8,9 @@ __pycache__/
 .venv/
 .pytest_cache/
 config/facts.yaml
+config/criteria.yaml
+config/sources.yaml
+config/*.bak
 config/profile.yaml
 config/settings.yaml
 cvs/cvs.yaml

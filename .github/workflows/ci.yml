@@ -38,3 +38,35 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
+
+  package:
+    # The installed (non-editable) package must carry its templates and work from an empty folder.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - run: |
+          export APPLYBOT_HOME="$RUNNER_TEMP/applybot-home"
+          cd "$RUNNER_TEMP"
+          applybot init
+          test -f "$APPLYBOT_HOME/config/facts.yaml"
+          applybot doctor || true
+
+  other-os:
+    # macOS and Windows: not yet required to pass (never run there before); watch the results.
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q

@@ -1,0 +1,107 @@
+# Canonical matching profile (source of truth for scoring).
+# FICTIONAL EXAMPLE: run `applybot init` to copy it to config/profile.yaml
+# (git-ignored), then edit it to describe YOU.
+
+name: Alex Example
+headline: Senior Backend Engineer
+seniority: Senior
+experience_years: "12+"
+home_base: Portugal
+
+# Where you can legally work. Used to reject, or send to review, postings limited to other
+# places ("Remote US", "must be based in Canada"). Regions understood: EU, EEA, Europe, EMEA,
+# North America, LATAM, APAC, worldwide. Or list countries by name.
+work_eligibility:
+  home_country: Portugal
+  authorised_regions: [Portugal, EU]
+  accepts_relocation: false   # true: places outside your regions go to review instead of reject
+languages: [Portuguese, English]
+
+positioning: >
+  Senior hands-on software engineer, systems architect and technical leader
+  with extensive experience designing, developing, integrating and operating
+  complex software systems: backend engineering, distributed architectures,
+  cloud-native platforms, infrastructure automation, high availability and
+  enterprise integrations.
+
+seniority_detail:
+  engineering: Senior
+  architecture: Senior / Lead
+  systems_engineering: Senior
+  backend: Senior
+  cloud_platform: Senior
+  technical_leadership: Senior
+  agile_scrum: Experienced practitioner
+  formal_people_management: Limited / not established
+  project_management: Supporting experience, not a primary specialisation
+
+# Job families used for classification. "tier" drives nothing numerically by
+# itself: the title alone must never inflate a score.
+families:
+  primary:
+    - Senior Backend Engineer
+    - Senior Software Engineer
+    - Senior Systems Engineer
+    - Solutions Architect
+    - Cloud Architect
+    - Platform Engineer
+    - Platform Architect
+    - Technical Lead
+    - Distributed Systems Engineer
+    - Infrastructure Engineer
+  secondary:
+    - DevOps Engineer
+    - DevOps Architect
+    - Cloud Infrastructure Engineer
+    - Integration Architect
+    - Full-Stack Developer
+    - Flutter Engineer
+    - Mobile Architect
+    - Software Development Lead
+    - Scrum Master
+    - Agile Delivery Lead
+    - Technical Delivery Manager
+  selective:   # partial match: always review, never auto
+    Engineering Manager: Formal people management requirements
+    Project Manager: Limited formal PM methodology experience
+    Agile Coach: Facilitation experience, formal coaching depth needs assessment
+    AI Engineer: AI integration and experimentation, not deep ML engineering
+    AI Platform Engineer: Cloud/platform background, developing AI operations experience
+    Principal Engineer: Depends on technical and organisational scope
+    Principal Architect: Depends on architecture governance and enterprise ownership
+
+preferences:
+  geography: Worldwide search
+  working_mode: [remote, hybrid]      # in order of preference
+  onsite: consider selectively
+  relocation: open to discussion
+  employment_types: [permanent, b2b, contract, freelance]
+  availability: Actively seeking
+  salary: Flexible
+  currency: EUR preferred, others accepted
+  travel: Consider international travel
+
+capabilities:
+  - Backend and service architecture
+  - Cloud-native and distributed systems
+  - Microservice design and service boundaries
+  - Event-driven and asynchronous architectures
+  - API design and enterprise integrations
+  - High availability and fault tolerance
+  - Database modelling and data access patterns
+  - Real-time communication
+  - Infrastructure automation and container orchestration
+  - CI/CD and deployment architecture
+  - Production troubleshooting and performance optimisation
+  - Observability and operational reliability
+  - Security-by-design and identity integration
+  - Technical design reviews and architectural decisions
+  - Legacy integration and modernisation
+  - Technical leadership, mentoring, Agile/Scrum facilitation
+
+matching_policy: >
+  Prioritise direct professional experience, distinguish production experience
+  from independent projects and familiarity, penalise unmet mandatory
+  requirements, and select the most relevant dedicated CV for each opportunity.
+  Worldwide search does not imply worldwide work authorisation: evaluate
+  separately whether the role can be done from your home country (see work_eligibility).

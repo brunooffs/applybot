@@ -25,6 +25,9 @@ dev = ["pytest>=8", "ruff>=0.6"]
 [project.scripts]
 applybot = "applybot.cli:main"
 
+[tool.setuptools.package-data]
+applybot = ["defaults/config/*", "defaults/cvs/*", "defaults/*.yaml"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

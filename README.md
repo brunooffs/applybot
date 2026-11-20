@@ -32,27 +32,64 @@ Full design, data model, decision rules and roadmap: [docs/ARCHITECTURE.md](docs
 job posting first; on Linux use `xclip -o | applybot try -`) shows which CV would be chosen, the score and reasons, and
 the drafted letter. It stores and sends nothing.
 
-## Setup
+## Install
+
+**macOS or Linux** (open Terminal):
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-python -m pytest            # no network needed
-applybot init               # creates your own config files from the *.example templates
+curl -LsSf https://raw.githubusercontent.com/brunooffs/applybot/main/install.sh | sh
 ```
 
-The committed `*.example` files describe a fictional candidate. `applybot init`
-copies them to `config/facts.yaml`, `config/profile.yaml`, `config/settings.yaml`
-and `cvs/cvs.yaml`, which are git-ignored. Then:
+**Windows** (open PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/brunooffs/applybot/main/install.ps1 | iex
+```
+
+The script installs [uv](https://docs.astral.sh/uv/) if you don't have it (it asks first),
+installs applybot with a suitable Python, creates your private folder and runs
+`applybot doctor`. It does not install Ollama or download any model. The scripts are short;
+[read them first](install.sh) if you prefer. Running it again updates applybot and keeps your files.
+
+Already have `uv` or `pipx`? `uv tool install git+https://github.com/brunooffs/applybot`, then `applybot init`.
+
+Your personal files live in **`~/.applybot`** (on Windows `C:\Users\<you>\.applybot`): `config/`,
+`cvs/`, the database in `data/` and approved packets in `outbox/`. Set `APPLYBOT_HOME` or pass
+`--home` to use another folder. Nothing personal is ever inside the installed package or this repository.
+
+Then:
 
 1. Edit `config/facts.yaml` with YOUR details: resolve every `TODO` and
    `CONFIRM`. This file is the only thing letters may draw from.
-2. Describe yourself and your target roles in `config/profile.yaml`.
+2. Describe yourself and your target roles in `config/profile.yaml`
+   (including `work_eligibility`, where you can work without a visa).
 3. Put your CVs in `cvs/` (names in `cvs/cvs.yaml`). `applybot cvs` shows what
    is missing and which job families have no CV.
-4. Pick the LLM in `config/settings.yaml`: `ollama` (local, fully open source)
-   or `anthropic` (hosted, optional, needs `ANTHROPIC_API_KEY`).
-5. Add company board tokens to `config/sources.yaml`.
+4. Pick the models in `config/settings.yaml`, or on the dashboard's Models page: `ollama`
+   (local, fully open source) or `anthropic` (hosted, needs `ANTHROPIC_API_KEY`).
+5. Run `applybot doctor`. It checks the steps above, reads your computer's memory and chip,
+   tells you whether a local model is realistic and prints the exact `ollama pull` command to run.
+   It never installs or downloads anything itself.
+6. `applybot serve --open`, then add your company boards on the Sources page.
+
+### Local models (Ollama)
+
+Install Ollama yourself from [ollama.com/download](https://ollama.com/download), then run the
+`ollama pull` command `applybot doctor` suggests for your machine. As a rule of thumb, a local model
+is fine for scoring on 16 GB or more, but a hosted model writes better letters and catches more
+invented claims. Mixing is supported (for example scoring on Ollama, letters and fact-check on Anthropic).
+
+### From a source checkout (developers)
+
+```bash
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+python -m pytest            # no network needed
+applybot init
+```
+
+A checkout that already has `config/facts.yaml` in the repository folder keeps using that folder.
+The templates live in `src/applybot/defaults/`.
 
 ## Daily use
 
