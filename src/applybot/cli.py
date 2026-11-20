@@ -120,19 +120,25 @@ def cmd_edit(args):
     subprocess.call([os.environ.get("EDITOR", "nano"), path])
     text = Path(path).read_text(encoding="utf-8").strip()
     try:
-        actions.save_letter(conn, job["id"], app["subject"], text)   # same path as the dashboard; also records history
+        actions.save_letter(conn, job["id"], app["subject"], text, cfg)   # same path as the dashboard; also records history
     except actions.ActionError as e:
         raise SystemExit(str(e))
+    _, _, after = _load(conn, job["id"])
+    left = json.loads(after["verification"] or "{}").get("issues") or []
     print("saved; marked as human-edited")
+    if left:
+        print("still flagged (approval blocked until fixed):")
+        for i in left:
+            print(f"  ! {i}")
 
 
 def cmd_approve(args):
     cfg, conn = _ctx(args)
     job, score, app = _load(conn, args.job)
     try:
-        d = actions.approve(cfg, conn, job["id"], force=args.force)
+        d = actions.approve(cfg, conn, job["id"])
     except actions.ActionError as e:
-        raise SystemExit(f"{e} (see `show`; `edit` fixes it, --force approves anyway)")
+        raise SystemExit(f"{e} (see `show`; `edit` fixes it)")
     print(f"approved -> {d}")
 
 
@@ -323,7 +329,6 @@ def main(argv=None):
         s.set_defaults(fn=fn)
     s = sub.add_parser("approve")
     s.add_argument("job")
-    s.add_argument("--force", action="store_true", help="approve a draft that failed verification")
     s.set_defaults(fn=cmd_approve)
     s = sub.add_parser("send")
     s.add_argument("--yes", action="store_true", help="actually send (default is dry-run)")

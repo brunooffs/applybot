@@ -72,7 +72,7 @@ applybot stats
 applybot serve --open        # http://127.0.0.1:8765, Ctrl-C to stop
 ```
 
-Paste-a-posting (`try`), the review queue with an editor, approve/reject, a
+Sources (add and check Greenhouse/Lever/Ashby tokens and Remotive categories), Run (fetch, score and draft in the background with progress, a stop button and a minimum score for drafting), paste-a-posting (`try`), the review queue with an editor, approve/reject, a
 confirmation page before every send, and the inbox with reply drafts. It calls
 the same code as the commands above, so the same checks apply (fact-check, CV
 file must exist, daily cap). It only answers on your own computer.
@@ -123,16 +123,19 @@ are not handled yet.
 
 - ATS form filling (headless Playwright), most postings have no email address.
 - Reading recruiter replies and drafting responses.
-- Verified live source adapters (parsers are tested against documented shapes only).
+- Source adapters beyond Greenhouse and Remotive are tested against documented shapes only (Greenhouse and Remotive were checked live).
 - HN "Who is hiring" source.
 
 ## Known limitations
 
-- Built for one candidate based in Portugal/EU: the scoring prompt and the
-  `portugal_eligible` field assume that. Making the home country configurable is
-  a good first contribution.
-- Source adapters (Greenhouse, Lever, Ashby, Remotive) are tested against
-  documented response shapes only, not yet verified against live endpoints.
+- Location eligibility is configured in `profile.yaml` (`work_eligibility`: home
+  country, authorised regions, accepts relocation). The job's location string is
+  read by plain code first (`eligibility.py`), the model only decides what that
+  cannot. The country and region lists are not exhaustive; additions welcome.
+- A letter with fact-check flags cannot be approved. The checks include a
+  plain-code test for wording copied from the posting that your facts do not contain.
+- Lever and Ashby adapters are tested against documented response shapes only,
+  not yet verified against live endpoints.
 - LinkedIn and Indeed are deliberately not supported (terms of service).
 
 ## Responsible use

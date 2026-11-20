@@ -41,7 +41,7 @@ def test_explain_shows_why_a_claim_does_not_count(cfg):
 
 
 def test_rejected_job_gets_no_letter(cfg):
-    raw = make_raw(arrangement={"remote": "yes", "portugal_eligible": "no", "employment_type": "permanent",
+    raw = make_raw(arrangement={"remote": "yes", "eligible": "no", "employment_type": "permanent",
                                  "evidence": "Node.js role, remote."})
     out = trial.explain(FakeLLM(score=raw), cfg, JOB)
     assert "DECISION reject" in out and "skipped" in out

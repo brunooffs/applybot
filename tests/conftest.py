@@ -40,7 +40,7 @@ def make_raw(**over):
         "mandatory_requirements": [
             {"requirement": "Node.js", "status": "met", "basis": "production", "disqualifying": False},
         ],
-        "arrangement": {"remote": "yes", "portugal_eligible": "yes", "employment_type": "permanent"},
+        "arrangement": {"remote": "yes", "eligible": "yes", "employment_type": "permanent"},
         "language": "en",
         "contact_email": None,
         "summary": "x",

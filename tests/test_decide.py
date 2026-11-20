@@ -54,17 +54,17 @@ def test_prompt_tells_the_model_when_to_use_stated(cfg):
 
 
 def test_not_eligible_from_portugal_rejects(cfg):
-    raw = make_raw(arrangement={"remote": "yes", "portugal_eligible": "no", "employment_type": "permanent"})
+    raw = make_raw(arrangement={"remote": "yes", "eligible": "no", "employment_type": "permanent"})
     assert run(cfg, raw).decision == "reject"
 
 
 def test_unknown_eligibility_goes_to_human(cfg):
-    raw = make_raw(arrangement={"remote": "yes", "portugal_eligible": "unknown", "employment_type": "permanent"})
+    raw = make_raw(arrangement={"remote": "yes", "eligible": "unknown", "employment_type": "permanent"})
     assert run(cfg, raw).decision == "human"
 
 
 def test_onsite_goes_to_human(cfg):
-    raw = make_raw(arrangement={"remote": "onsite", "portugal_eligible": "yes", "employment_type": "permanent"})
+    raw = make_raw(arrangement={"remote": "onsite", "eligible": "yes", "employment_type": "permanent"})
     assert run(cfg, raw).decision == "human"
 
 
@@ -126,7 +126,7 @@ def test_invented_quote_is_not_evidence(cfg):
 
 
 def test_not_eligible_needs_a_quote_too(cfg):
-    arr = {"remote": "yes", "portugal_eligible": "no", "employment_type": "permanent"}
+    arr = {"remote": "yes", "eligible": "no", "employment_type": "permanent"}
     assert run_p(cfg, make_raw(arrangement=arr)).decision == "human"
     arr["evidence"] = "Candidates must hold a US work permit"
     assert run_p(cfg, make_raw(arrangement=arr)).decision == "reject"
@@ -142,3 +142,20 @@ def test_quote_match_ignores_case_and_punctuation(cfg):
 def test_low_score_still_rejects_even_with_unproven_flags(cfg):
     raw = make_raw(dimensions={d: 20 for d in DIMENSIONS})
     assert run_p(cfg, raw).decision == "reject"
+
+
+def test_legacy_portugal_eligible_key_still_read(cfg):
+    raw = make_raw(arrangement={"remote": "yes", "portugal_eligible": "unknown", "employment_type": "permanent"})
+    v = decide(raw, cfg.criteria, cfg.family_to_cv, cfg.family_names, [])
+    assert any("unclear whether" in r for r in v.reasons)
+
+
+def test_malformed_model_output_is_coerced(cfg):
+    from applybot.scoring import sanitize
+    raw = make_raw()
+    raw["mandatory_requirements"] = ["5 years of Go", {"requirement": "AWS", "status": "met", "basis": "production"}]
+    raw["dimensions"] = ["bad"]
+    sanitize(raw)
+    assert raw["dimensions"] == {} and len(raw["mandatory_requirements"]) == 2
+    v = decide(raw, cfg.criteria, cfg.family_to_cv, cfg.family_names, [])
+    assert v.decision == "reject"   # no scores at all: never auto

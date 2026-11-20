@@ -160,15 +160,14 @@ def test_approve_clean_draft(env):
     assert (env.cfg.path("outbox")).exists()
 
 
-def test_failed_factcheck_cannot_be_approved_without_edit_or_force(env):
+def test_failed_factcheck_cannot_be_approved_unchanged(env):
     jid = seed(env, status="needs_edit", issues=["unsupported claim: led teams"])
     page = req(env, "GET", "/job?" + urlencode({"id": jid}))[1]
-    assert "unsupported claim: led teams" in page and 'name="force"' in page
+    assert "unsupported claim: led teams" in page and 'name="force"' not in page
     letter = "Hello,\nI build backends.\nAlex Example"
-    _, _, loc = req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": letter})
-    assert "err=" in loc and status_of(env, jid) == "needs_edit"
-    req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": letter, "force": "1"})
-    assert status_of(env, jid) == "approved"
+    # unchanged letter: still blocked, and a forged force flag does nothing
+    _, _, loc = req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": letter, "force": "1"})
+    assert status_of(env, jid) != "approved"
 
 
 def test_editing_the_letter_clears_the_failure(env):
@@ -382,7 +381,7 @@ def test_score_only_result_cannot_be_saved(env):
 
 
 def test_rejected_result_is_not_queued(env, monkeypatch):
-    raw = make_raw(arrangement={"remote": "yes", "portugal_eligible": "no", "employment_type": "permanent",
+    raw = make_raw(arrangement={"remote": "yes", "eligible": "no", "employment_type": "permanent",
                                 "evidence": "Senior backend engineer, remote in the EU."})
     monkeypatch.setattr(web, "make_llm", lambda c: FakeLLM(score=raw))
     _, text, loc = run_try(env, {"posting": POSTING})
@@ -505,3 +504,88 @@ def test_saving_is_refused_if_existing_job_already_approved(env):
     db.save_application(conn, other.id, "approved", "s", "b", {})
     code, _, back = req(env, "POST", "/try/save", {"r": rid})
     assert "already+approved" in back or "already%20approved" in back or "already approved" in back
+
+
+def test_edit_cannot_hide_a_deterministic_problem(env):
+    jid = seed(env, status="needs_edit", issues=["unsupported claim: led teams"])
+    bad = "Hello,\nI have 99 years of Node.js.\nAlex Example"
+    _, _, loc = req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": bad})
+    assert "err=" in loc and status_of(env, jid) == "needs_edit"
+    good = "Hello,\nI build backends.\nAlex Example"
+    req(env, "POST", "/job/action", {"id": jid, "action": "approve", "subject": "Application: Backend", "letter": good})
+    assert status_of(env, jid) == "approved"
+
+
+# --- sources and run pages -------------------------------------------------------
+
+def test_sources_page_and_save(env):
+    page = req(env, "GET", "/sources")[1]
+    assert "Greenhouse" in page and "software-dev" in page
+    code, _, loc = req(env, "POST", "/sources/save", {"greenhouse": "affirm\ngitlab, affirm", "lever": "", "ashby": "",
+                                                       "remotive": "1", "cat_extra": "data"})
+    assert code == 303 and "ok=" in loc
+    src = load_config(env.home).sources
+    assert src["greenhouse"] == ["affirm", "gitlab"] and src["remotive"]["enabled"] is True
+    assert src["remotive"]["categories"] == ["data"]
+    assert (env.home / "config" / "sources.yaml.bak").exists()
+
+
+def test_sources_save_keeps_every_checked_category(env):
+    body = urlencode([("_t", env.token), ("greenhouse", ""), ("lever", ""), ("ashby", ""), ("remotive", "1"),
+                      ("cat", "software-dev"), ("cat", "devops"), ("cat_extra", "")])
+    c = http.client.HTTPConnection("127.0.0.1", env.port)
+    c.request("POST", "/sources/save", body=body, headers={"Host": f"127.0.0.1:{env.port}",
+              "Content-Type": "application/x-www-form-urlencoded"})
+    assert c.getresponse().status == 303
+    assert load_config(env.home).sources["remotive"]["categories"] == ["software-dev", "devops"]
+
+
+def test_sources_save_rejects_bad_token(env):
+    _, _, loc = req(env, "POST", "/sources/save", {"greenhouse": "bad token/../x", "lever": "", "ashby": ""})
+    assert "err=" in loc
+    assert "../x" not in (env.home / "config" / "sources.yaml").read_text()
+
+
+def test_check_source_reports_count_and_404(env, monkeypatch):
+    import httpx
+
+    def handler(request):
+        if "good" in str(request.url):
+            return httpx.Response(200, json={"jobs": [{}, {}, {}]})
+        return httpx.Response(404)
+    monkeypatch.setattr(web, "make_http", lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    _, _, loc = req(env, "POST", "/sources/check", {"kind": "greenhouse", "name": "good"})
+    assert "ok=" in loc and "3+postings" in loc
+    _, _, loc = req(env, "POST", "/sources/check", {"kind": "greenhouse", "name": "nope"})
+    assert "err=" in loc and "404" in loc
+
+
+def test_run_scores_and_drafts_in_background(env, monkeypatch):
+    import time
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-real")   # the example settings send verify to Anthropic
+    from applybot import runner
+    runner.CURRENT = None
+    conn = env.conn()
+    db.upsert_job(conn, Job("t", "9", "Acme", "Senior Backend Engineer", "https://acme.test/9", "Remote, Poland", True,
+                            POSTING), "new")
+    conn.close()
+    assert "Start" in req(env, "GET", "/run")[1]
+    code, _, loc = req(env, "POST", "/run/start", {"score": "1", "draft": "1", "score_limit": "5", "draft_limit": "5", "min_score": "0"})
+    assert code == 303 and "ok=" in loc
+    for _ in range(100):
+        if runner.CURRENT.state != "running":
+            break
+        time.sleep(0.05)
+    assert runner.CURRENT.state == "done", runner.CURRENT.log
+    assert runner.CURRENT.results["score"]["scored"] == 1
+    assert "Finished" in req(env, "GET", "/run")[1]
+
+
+def test_run_needs_a_step_and_blocks_missing_anthropic_key(env, monkeypatch):
+    from applybot import actions
+    _, _, loc = req(env, "POST", "/run/start", {})
+    assert "err=" in loc
+    actions.save_stages(env.cfg, {s: "anthropic" for s in ("score", "draft", "verify", "revise", "reply")})
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _, _, loc = req(env, "POST", "/run/start", {"score": "1"})
+    assert "err=" in loc and "ANTHROPIC_API_KEY" in loc

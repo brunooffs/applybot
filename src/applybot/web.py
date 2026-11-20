@@ -26,7 +26,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from . import actions, db, history, replies, trial
+from . import actions, db, history, replies, runner, scoring, trial
 from .config import load_config
 from .llm import LLM
 from .models import Job
@@ -55,6 +55,10 @@ def stash_result(job, res, form) -> str:
 def get_result(rid: str):
     with RESULTS_LOCK:
         return RESULTS.get(rid)
+
+
+def make_http():                 # hook for tests: an httpx client for "check this source" (None = real network)
+    return None
 
 
 def make_llm(cfg):               # a module-level hook so tests can swap in a fake
@@ -109,7 +113,8 @@ details{margin:10px 0}summary{cursor:pointer;color:var(--mut)}ul{margin:6px 0;pa
 """
 
 NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("review", "/queue", "Review"),
-       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("settings", "/settings", "Models"))
+       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
+       ("settings", "/settings", "Models"))
 
 
 def active_for(path: str, q: dict) -> str:
@@ -117,6 +122,10 @@ def active_for(path: str, q: dict) -> str:
         return "try"
     if path == "/settings":
         return "settings"
+    if path in ("/sources", "/sources/save", "/sources/check"):
+        return "sources"
+    if path in ("/run", "/run/start", "/run/cancel"):
+        return "run"
     if path == "/history":
         return "history"
     if path in ("/inbox", "/message", "/reply"):
@@ -148,6 +157,7 @@ def layout(body: str, nonce: str, title: str, active: str, ok: str = "", err: st
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in NAV)
     flash = (f'<div class="flash ok">{esc(ok)}</div>' if ok else "") + (f'<div class="flash err">{esc(err)}</div>' if err else "")
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'{"<meta http-equiv=refresh content=3>" if "<!--refresh-->" in body else ""}'
             f'<title>{esc(title)} · applybot</title><style>{CSS}</style></head><body>'
             f'<header><nav><b>applybot</b>{nav}</nav></header><main>{flash}{body}</main>'
             f'<script nonce="{nonce}">for(const f of document.querySelectorAll("form[data-busy]"))f.addEventListener("submit",()=>{{'
@@ -235,9 +245,9 @@ def render_trial(res: dict, after_hero: str = "") -> str:
     cv = (f'<span class="chip {"ok" if res["cv_found"] else "bad"}">CV: {esc(res["cv_file"] or res["cv_id"])}'
           f'{"" if res["cv_found"] else " (file missing)"}</span>' if res["cv_id"] else '<span class="chip warn">no CV mapped</span>')
     arr = res["arrangement"]
-    ptl = arr.get("portugal_eligible", "?")
+    ptl = scoring.eligible_value(arr) if arr else "?"
     chips = (cv + f'<span class="chip">{esc(res["family"])}</span>'
-             f'<span class="chip {"ok" if ptl == "yes" else "bad" if ptl == "no" else "warn"}">Portugal: {esc(str(ptl))}</span>'
+             f'<span class="chip {"ok" if ptl == "yes" else "bad" if ptl == "no" else "warn"}">Eligible: {esc(str(ptl))}</span>'
              f'<span class="chip">{esc(str(arr.get("remote", "?")))}</span><span class="chip">{esc(str(arr.get("employment_type", "?")))}</span>'
              f'<span class="chip">language: {esc(res["language"])}</span>'
              f'<span class="chip">{esc(res["contact"]) if res["contact"] else "no email: apply via the posting"}</span>')
@@ -426,22 +436,18 @@ def page_job(ctx, q):
     parts.append(f"<h2>Letter {badge(app['status'])} {edited}</h2>")
     if issues:
         parts.append("<div class='card'><b>Fact-check found problems</b><ul>" + "".join(f"<li class='issue'>{esc(i)}</li>" for i in issues)
-                     + "</ul><span class='mut'>Fix or delete the flagged claims, then save.</span></div>")
+                     + "</ul><span class='mut'>Fix or delete the flagged claims, then save. Approval stays blocked until none remain.</span></div>")
     st = app["status"]
     if st in ("drafted", "needs_edit"):
-        force = ""
-        if st == "needs_edit":
-            force = ('<label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" name="force" value="1"> '
-                     "Approve even though the fact-check failed (I have checked it myself)</label>")
         parts.append(
             f'<form method="post" action="/job/action">{hidden(tok, id=job_id)}'
             f'<label>Subject</label><input type="text" name="subject" value="{esc(app["subject"] or "")}">'
             f'<label>Letter</label><textarea name="letter" rows="20">{esc(app["letter"] or "")}</textarea>'
-            f'<div class="row">{force}</div><div class="row">'
+            '<div class="row">'
             '<button name="action" value="save">Save edits</button>'
             '<button class="pri" name="action" value="approve">Approve</button>'
             '<button class="danger" name="action" value="reject">Reject</button></div></form>'
-            "<p class='mut'>An edited letter is not re-checked: after you save, it counts as reviewed by you.</p>")
+            "<p class='mut'>Saving re-runs the automatic checks (numbers, copied posting wording, not-claimed skills). A letter with remaining flags cannot be approved.</p>")
     else:
         parts.append(f'<div class="card"><b>{esc(app["subject"] or "")}</b><pre style="margin-top:8px">{esc(app["letter"] or "")}</pre></div>')
         if st == "approved":
@@ -525,6 +531,143 @@ def do_settings_save(ctx, f):
     except actions.ActionError as e:
         raise Redirect(link("/settings", err=str(e)))
     raise Redirect(link("/settings", ok="Saved. The next action uses these models."))
+
+
+# --- sources and runs ----------------------------------------------------------------------
+
+SRC_HELP = {"greenhouse": "boards.greenhouse.io/&lt;token&gt;  or  job-boards.greenhouse.io/&lt;token&gt;",
+            "lever": "jobs.lever.co/&lt;token&gt;", "ashby": "jobs.ashbyhq.com/&lt;token&gt;"}
+
+
+def page_sources(ctx, q):
+    cfg, tok = ctx["cfg"], ctx["tok"]
+    s = runner.read_sources(cfg)
+    boxes = "".join(
+        f"<div class='card'><label><b>{k.capitalize()}</b> <span class='mut'>· {SRC_HELP[k]}</span></label>"
+        f"<textarea name='{k}' rows='5' placeholder='one token per line'>{esc(chr(10).join(s[k]))}</textarea></div>"
+        for k in runner.KINDS)
+    cats = s["remotive"]["categories"]
+    checks = "".join(
+        f"<label style='display:inline-flex;gap:6px;align-items:center;margin-right:14px'>"
+        f"<input type='checkbox' name='cat' value='{c}'{' checked' if c in cats else ''}> {c}</label>"
+        for c in runner.REMOTIVE_KNOWN)
+    extra = ", ".join(c for c in cats if c not in runner.REMOTIVE_KNOWN)
+    kinds = "".join(f"<option>{k}</option>" for k in (*runner.KINDS, "remotive"))
+    body = (
+        "<h1>Sources</h1><p class='sub'>Where postings come from. Only public job-board APIs; no scraping and no logins. "
+        "Which titles are wanted is decided afterwards by <code>config/criteria.yaml</code>.</p>"
+        f"<form method='post' action='/sources/save'>{hidden(tok)}{boxes}"
+        "<div class='card'><label style='display:flex;gap:8px;align-items:center'><input type='checkbox' name='remotive' value='1'"
+        f"{' checked' if s['remotive']['enabled'] else ''}> <b>Remotive</b> <span class='mut'>· remote jobs, by category</span></label>"
+        f"<p>{checks}</p><label>Other category slugs <span class='mut'>(comma separated; Check them below first)</span></label>"
+        f"<input type='text' name='cat_extra' value='{esc(extra)}'>"
+        "<p class='mut'>A category only decides which feed is downloaded. Whether a title is wanted (Software Architect, "
+        "Backend Engineer, Scrum Master…) is decided afterwards by the keywords in <code>criteria.yaml</code>. "
+        "Confirmed to work: software-dev, devops. The others are Remotive's category names but not verified here: Check before relying on them.</p></div>"
+        "<p><button class='pri'>Save sources</button> <span class='mut'>The previous file is kept as sources.yaml.bak.</span></p></form>"
+        "<h2>Check a token</h2><div class='card'><p class='mut' style='margin-top:0'>Asks the board's public API whether the token exists "
+        "and how many postings it lists. Nothing is saved.</p>"
+        f"<form method='post' action='/sources/check' data-busy>{hidden(tok)}<div class='row'>"
+        f"<select name='kind'>{kinds}</select><input type='text' name='name' placeholder='token or category' style='max-width:260px'>"
+        "<button>Check</button> <span class='busy mut' hidden>Checking…</span></div></form></div>")
+    return "Sources", body
+
+
+def do_sources_save(ctx, f):
+    cats = list(f.get("_multi", {}).get("cat", []))
+    try:
+        runner.save_sources(ctx["cfg"], {
+            **{k: runner.parse_tokens(f.get(k, "")) for k in runner.KINDS},
+            "remotive": {"enabled": bool(f.get("remotive")),
+                         "categories": cats + runner.parse_tokens(f.get("cat_extra", ""))}})
+    except runner.SourceError as e:
+        raise Redirect(link("/sources", err=str(e)))
+    raise Redirect(link("/sources", ok="Saved. The next run uses these sources."))
+
+
+def do_sources_check(ctx, f):
+    ok, msg = runner.check_source(f.get("kind", ""), f.get("name", ""), make_http())
+    raise Redirect(link("/sources", **({"ok": msg} if ok else {"err": msg})))
+
+
+def _fmt_secs(s: float) -> str:
+    s = int(s)
+    return f"{s // 60}m {s % 60:02d}s" if s >= 60 else f"{s}s"
+
+
+def page_run(ctx, q):
+    cfg, conn, tok = ctx["cfg"], ctx["conn"], ctx["tok"]
+    run = runner.CURRENT
+    pending = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='new'").fetchone()[0]
+    draftable = conn.execute("""SELECT COUNT(*) FROM scores s LEFT JOIN applications a ON a.job_id=s.job_id
+                                WHERE s.decision IN ('human','auto_eligible') AND a.job_id IS NULL""").fetchone()[0]
+    good = (cfg.criteria.get("thresholds") or {}).get("good", 70)
+    status = ""
+    if run:
+        pct = int(100 * run.done / run.total) if run.total else 0
+        elapsed = _fmt_secs((run.finished or time.time()) - run.started)
+        head = {"running": f"Running: {esc(run.stage)}", "done": "Finished", "stopped": "Stopped", "failed": "Failed"}[run.state]
+        cls = {"done": "ok", "stopped": "ok", "failed": "bad"}.get(run.state, "")
+        bar = f"<div class='bar'><i style='width:{pct}%'></i></div>" if run.state == "running" and run.total else ""
+        prog = f" · {run.done}/{run.total}" if run.state == "running" and run.total else ""
+        cur = f"<div>{esc(run.current)}</div>" if run.current else ""
+        stop = (f"<form method='post' action='/run/cancel'>{hidden(tok)}<button class='danger'>Stop after the current job</button></form>"
+                if run.state == "running" else "")
+        status = (f"{'<!--refresh-->' if run.state == 'running' else ''}<h2>Status</h2><div class='card'>"
+                  f"<span class='badge {cls}'>{head}</span> <span class='mut'>{elapsed}{prog}</span>{cur}{bar}"
+                  f"<pre style='max-height:220px;overflow:auto'>{esc(chr(10).join(run.log[-40:]))}</pre>{stop}</div>")
+    running = runner.is_running()
+    dis = " disabled" if running else ""
+    warn = runner.anthropic_key_problem(cfg, {"score", "draft"})
+    body = (
+        "<h1>Run</h1><p class='sub'>The same steps as <code>applybot run</code>: fetch postings, score them, draft letters. "
+        "Nothing is approved or sent from here; drafts land in Review.</p>"
+        + (f"<div class='banner bad'>{esc(warn)}</div>" if warn else "")
+        + f"<div class='card mut'>Waiting to be scored: <b>{pending}</b> · scored, no letter yet: <b>{draftable}</b> · "
+          f"Models: {esc(_models(cfg))}</div>"
+        f"<form method='post' action='/run/start'>{hidden(tok)}<div class='card'>"
+        "<label><input type='checkbox' name='ingest' value='1' checked> <b>1. Fetch</b> new postings from your sources</label>"
+        "<label><input type='checkbox' name='score' value='1' checked> <b>2. Score</b> at most "
+        "<input type='number' name='score_limit' value='10' min='1' max='500' style='width:80px'> postings "
+        "<span class='mut'>(oldest first; a local model needs about a minute and a half each)</span></label>"
+        "<label><input type='checkbox' name='draft' value='1' checked> <b>3. Draft</b> letters for at most "
+        "<input type='number' name='draft_limit' value='5' min='1' max='200' style='width:80px'> jobs scoring at least "
+        f"<input type='number' name='min_score' value='{good}' min='0' max='100' style='width:80px'> "
+        "<span class='mut'>(best scores first)</span></label>"
+        f"<p><button class='pri'{dis}>{'A run is in progress' if running else 'Start'}</button></p></div></form>"
+        + status)
+    return "Run", body
+
+
+def _int(v, default, lo, hi):
+    try:
+        return max(lo, min(hi, int(v)))
+    except (TypeError, ValueError):
+        return default
+
+
+def do_run_start(ctx, f):
+    cfg = ctx["cfg"]
+    steps = [s for s in ("ingest", "score", "draft") if f.get(s)]
+    if not steps:
+        raise Redirect(link("/run", err="Pick at least one step."))
+    problem = runner.anthropic_key_problem(cfg, steps)
+    if problem:
+        raise Redirect(link("/run", err=problem))
+    opts = {"score_limit": _int(f.get("score_limit"), 10, 1, 500), "draft_limit": _int(f.get("draft_limit"), 5, 1, 200),
+            "min_score": _int(f.get("min_score"), 70, 0, 100)}
+    try:
+        runner.start(cfg.root, make_llm, steps, opts)
+    except runner.SourceError as e:
+        raise Redirect(link("/run", err=str(e)))
+    raise Redirect(link("/run", ok="Started. This page refreshes while it runs; you can leave it."))
+
+
+def do_run_cancel(ctx, f):
+    if runner.CURRENT and runner.is_running():
+        runner.CURRENT.stop.set()
+        runner.CURRENT.say("Stop requested; finishing the current job…")
+    raise Redirect(link("/run"))
 
 
 KIND_LABEL = {"draft": "first draft", "revision": "automatic revision", "edit": "edited by you", "sent": "sent to the recruiter"}
@@ -679,9 +822,9 @@ def do_job_action(ctx, f):
             subject = f.get("subject", "").strip()
             letter = f.get("letter", "").replace("\r\n", "\n").strip()
             if app and (letter != (app["letter"] or "").strip() or subject != (app["subject"] or "").strip()):
-                actions.save_letter(conn, job_id, subject, letter)
+                actions.save_letter(conn, job_id, subject, letter, cfg)
             if action == "approve":
-                d = actions.approve(cfg, conn, job_id, force=bool(f.get("force")))
+                d = actions.approve(cfg, conn, job_id)
                 raise Redirect(link("/job", id=job_id, ok=f"Approved. Folder: {d}"))
             raise Redirect(link("/job", id=job_id, ok="Saved."))
         raise actions.ActionError("unknown action")
@@ -738,9 +881,11 @@ def do_replies_check(ctx, f):
 
 
 GET_ROUTES = {"/": lambda c, q: page_overview(c), "/try": page_try_view, "/queue": page_queue, "/job": page_job,
-              "/send": page_send, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
+              "/send": page_send, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
 POST_ROUTES = {"/try/save": do_try_save, "/job/action": do_job_action, "/send": do_send, "/message/save": do_message_save,
-               "/reply": do_reply_send, "/replies/check": do_replies_check, "/settings/save": do_settings_save}
+               "/reply": do_reply_send, "/replies/check": do_replies_check, "/settings/save": do_settings_save,
+               "/sources/save": do_sources_save, "/sources/check": do_sources_check, "/run/start": do_run_start,
+               "/run/cancel": do_run_cancel}
 
 
 # --- server -------------------------------------------------------------------------------------
@@ -826,7 +971,9 @@ class Handler(BaseHTTPRequestHandler):
             length = -1
         if not 0 <= length <= MAX_BODY:
             return self._send(413, "Request too large.")
-        f = {k: v[0] for k, v in parse_qs(self.rfile.read(length).decode("utf-8", "replace"), keep_blank_values=True).items()}
+        multi = parse_qs(self.rfile.read(length).decode("utf-8", "replace"), keep_blank_values=True)
+        f = {k: v[0] for k, v in multi.items()}
+        f["_multi"] = multi   # every value of a repeated field (checkbox groups)
         if not secrets.compare_digest(f.get("_t", ""), self.token):
             return self._send(403, "Forbidden: missing or wrong token. Reload the page and try again.")
         ctx = self._ctx()

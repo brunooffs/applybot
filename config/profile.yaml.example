@@ -7,6 +7,14 @@ headline: Senior Backend Engineer
 seniority: Senior
 experience_years: "12+"
 home_base: Portugal
+
+# Where you can legally work. Used to reject, or send to review, postings limited to other
+# places ("Remote US", "must be based in Canada"). Regions understood: EU, EEA, Europe, EMEA,
+# North America, LATAM, APAC, worldwide. Or list countries by name.
+work_eligibility:
+  home_country: Portugal
+  authorised_regions: [Portugal, EU]
+  accepts_relocation: false   # true: places outside your regions go to review instead of reject
 languages: [Portuguese, English]
 
 positioning: >
@@ -96,4 +104,4 @@ matching_policy: >
   from independent projects and familiarity, penalise unmet mandatory
   requirements, and select the most relevant dedicated CV for each opportunity.
   Worldwide search does not imply worldwide work authorisation: evaluate
-  separately whether the role can be done from Portugal.
+  separately whether the role can be done from your home country (see work_eligibility).
