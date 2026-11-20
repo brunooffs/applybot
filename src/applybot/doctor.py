@@ -176,6 +176,8 @@ def checks(cfg: Config) -> list[tuple[str, str]]:
 
 
 def report(cfg: Config) -> int:
+    import logging
+    logging.getLogger("httpx").setLevel(logging.WARNING)   # no request log lines in the report
     mark = {OK: "ok  ", WARN: "warn", FAIL: "FAIL", INFO: "    "}
     items = checks(cfg)
     for level, msg in items:

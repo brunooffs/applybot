@@ -15,7 +15,9 @@ tiers:
     note: Fine for scoring postings. Letters will be basic; use anthropic for draft and verify.
   - min_gb: 16
     model: "qwen2.5:14b"
-    note: Good for scoring, about a minute or more per posting. Use anthropic for draft and verify.
-  - min_gb: 32
+    note: Good for scoring, about a minute or more per posting (measured on a 32 GB Apple-silicon Mac). Use anthropic for draft and verify.
+  - min_gb: 48
     model: "qwen2.5:32b"
     note: Best local option here. Still slower than a hosted model; letters are worth checking closely.
+    # a 4-bit 32B model needs about 20 GB; on a 32 GB Mac the system and other apps share that memory,
+    # so it is not suggested below 48 GB
