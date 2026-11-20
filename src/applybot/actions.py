@@ -37,9 +37,10 @@ def load(conn, job_id: str):
 
 # --- reviewing a draft ------------------------------------------------------
 
-def save_letter(conn, job_id: str, subject: str, letter: str) -> None:
-    """A human-edited letter. As with `applybot edit`, the earlier fact-check
-    issues are cleared and the draft is marked as edited by you."""
+def save_letter(conn, job_id: str, subject: str, letter: str, cfg=None) -> None:
+    """A human-edited letter. The earlier LLM fact-check issues are cleared and the draft is marked as
+    edited by you, but the plain-code checks (numbers, not-claimed technologies, copied posting wording,
+    placeholders) run again: an edit can fix a problem, never hide it. Without `cfg` they are skipped."""
     job, _, app = load(conn, job_id)
     if not app:
         raise ActionError("no draft for this job")
@@ -48,20 +49,27 @@ def save_letter(conn, job_id: str, subject: str, letter: str) -> None:
     letter = letter.strip()
     if not letter:
         raise ActionError("the letter is empty")
-    db.save_application(conn, job_id, "drafted", subject.strip() or app["subject"], letter,
-                        {"issues": [], "edited_by_human": True})
+    issues: list[str] = []
+    if cfg is not None:
+        from . import drafting
+        issues = drafting.deterministic_issues(letter, job["title"], job["company"], job["description"] or "", cfg)
+    db.save_application(conn, job_id, "needs_edit" if issues else "drafted", subject.strip() or app["subject"], letter,
+                        {"issues": issues, "edited_by_human": True})
     try:
-        history.add(conn, job_id, job["company"], job["title"], "edit", subject.strip() or app["subject"], letter, [])
+        history.add(conn, job_id, job["company"], job["title"], "edit", subject.strip() or app["subject"], letter, issues)
     except Exception:
         pass
 
 
-def approve(cfg, conn, job_id: str, force: bool = False) -> Path:
+def approve(cfg, conn, job_id: str) -> Path:
+    """Build the outbox packet. A draft with unresolved fact-check problems cannot be approved;
+    there is no override. Edit the letter until the flags are gone."""
     job, score, app = load(conn, job_id)
     if not app:
         raise ActionError("no draft for this job")
-    if app["status"] == "needs_edit" and not force:
-        raise ActionError("draft failed verification (see the issues). Edit it to fix it, or approve anyway.")
+    if app["status"] == "needs_edit":
+        raise ActionError("the draft still has fact-check problems (see the issues). Edit the letter to fix them; "
+                          "it cannot be approved while any remain.")
     if app["status"] in ("sent", "rejected"):
         raise ActionError(f"the application is {app['status']}")
     d = packets.build_packet(cfg, job, app, score)

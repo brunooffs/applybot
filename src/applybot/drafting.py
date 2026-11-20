@@ -1,9 +1,12 @@
 """Cover letter generation, grounded in facts.yaml and double-checked.
 
-Two independent guards before a letter reaches the review queue:
+Independent guards before a letter reaches the review queue:
   1. numeric_guard: every number in the letter must already appear in
      facts.yaml or the posting (catches an invented "15 years").
-  2. LLM fact-check: every claim about the candidate must be supported by
+  2. not_claimed_guard / placeholders: plain-code checks.
+  3. parroting_guard: a run of words copied from the posting that facts.yaml
+     does not contain is a requirement echoed back as a claim.
+  4. LLM fact-check: every claim about the candidate must be supported by
      facts.yaml.
 A letter that fails either guard is stored as `needs_edit`, never `drafted`.
 """
@@ -30,6 +33,7 @@ Hard rules:
 - Never name any technology listed under not_claimed, not even as something to learn or "work with". If the posting wants it, say nothing about it.
 - Never write that the candidate is "excited to contribute to" or "can work with" a field or technology unless FACTS back it. Describe only what the candidate has actually done.
 - Do not attach a tool to an employer unless FACTS tie them together (a tool listed under skills is not automatically used at every employer).
+- Do not copy phrases from the posting. Describe what the candidate did in your own words, using FACTS wording; the posting only tells you which of the candidate's real experiences to mention.
 - Mention at most 2-3 genuinely relevant points that match the posting. 150-220 words. First person, plain, no clichés, no placeholders in brackets.
 - Do not mention the CV, a portfolio or GitHub at all (the CV is attached automatically); never write that they are "available on request".
 - If STYLE EXAMPLES are given, they are earlier letters the candidate approved. Match their length, tone and structure. Never copy facts, employers, numbers or claims from them: facts come only from FACTS, and only what fits this posting.
@@ -62,6 +66,52 @@ def not_claimed_guard(letter: str, cfg) -> list[str]:
             if len(name) >= 2 and re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])", letter, re.I):
                 found.append(f"letter mentions '{name}', which is listed as not claimed")
     return found
+
+
+PARROT_WORDS = 5   # this many consecutive words copied from the posting count as echoing it
+
+
+def _words(s: str) -> list[str]:
+    return re.sub(r"[^\w+#.]+", " ", (s or "").lower().replace("’", "'")).replace(".", " ").split()
+
+
+def parroting_guard(letter: str, posting: str, facts_text: str, *ignore: str) -> list[str]:
+    """Deterministic: flag runs of PARROT_WORDS+ consecutive words that the letter shares with the posting
+    but that facts.yaml does not contain. Small models echo requirements ("strong experience designing
+    scalable distributed systems") as if they were the candidate's own claims. `ignore` texts (job title,
+    company) are allowed, since naming the role is normal."""
+    lw = _words(letter)
+    n = PARROT_WORDS
+    if len(lw) < n:
+        return []
+    post = " " + " ".join(_words(posting)) + " "
+    facts = " " + " ".join(_words(facts_text)) + " "
+    skip = " " + " ".join(" ".join(_words(t)) for t in ignore) + " "
+    hits = [i for i in range(len(lw) - n + 1)
+            if (g := " " + " ".join(lw[i:i + n]) + " ") in post and g not in facts and g not in skip]
+    out, start, prev = [], None, None
+    for i in hits + [None]:
+        if start is None:
+            start = prev = i
+            continue
+        if i is not None and i <= prev + 1:
+            prev = i
+            continue
+        out.append(" ".join(lw[start:prev + n]))
+        start = prev = i
+    return [f"letter copies the posting's wording, which facts do not contain: '{p}'" for p in out if p]
+
+
+def deterministic_issues(letter: str, job_title: str, job_company: str, job_description: str, cfg) -> list[str]:
+    """Every plain-code check. Also re-run when a human saves an edited letter, so an edit can
+    remove a problem but never hide one."""
+    facts = _facts_for_prompt(cfg)
+    issues = numeric_guard(letter, facts, job_description, job_title)
+    issues += not_claimed_guard(letter, cfg)
+    issues += parroting_guard(letter, job_description, facts, job_title, job_company)
+    if "TODO" in letter or "[" in letter:
+        issues.append("letter contains a placeholder")
+    return issues
 
 
 def numeric_guard(letter: str, *allowed_sources: str) -> list[str]:
@@ -168,10 +218,7 @@ def draft_checked(llm, job: Job, language: str, cfg, max_revisions: int | None =
 
 
 def verify_letter(llm, letter: dict, job: Job, cfg) -> list[str]:
-    issues = numeric_guard(letter["body"], _facts_for_prompt(cfg), job.description, job.title)
-    issues += not_claimed_guard(letter["body"], cfg)
-    if "TODO" in letter["body"] or "[" in letter["body"]:
-        issues.append("letter contains a placeholder")
+    issues = deterministic_issues(letter["body"], job.title, job.company, job.description, cfg)
     try:
         res = for_stage(llm, "verify").complete_json(VERIFY_SYSTEM, f"FACTS:\n{_facts_for_prompt(cfg)}\n\nLETTER:\n{letter['body']}")
     except LLMError as e:

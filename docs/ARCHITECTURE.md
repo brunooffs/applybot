@@ -90,10 +90,10 @@ requirements (each with a status and the *basis* on which you'd meet it), and
 the work arrangement. Code then applies, in this order:
 
 1. Family not one of your known families → **reject**.
-2. Cannot be done from Portugal → **reject**.
+2. Cannot be done from your home country (`work_eligibility`; the job's location string is checked by `eligibility.py` before the model's answer is used) → **reject**, only with a verbatim quote from the posting.
 3. A **disqualifying** requirement is unmet → **reject** (a high score cannot hide it).
 4. Weighted score below 55 → **reject**.
-5. Otherwise collect reasons for human review: a non-blocking unmet requirement, an unconfirmable hard requirement, unclear Portugal eligibility, on-site role, **no CV mapped for the family**, a selective/stretch family (Engineering Manager, Project Manager, Agile Coach, AI Engineer, AI Platform Engineer, Principal Engineer/Architect), or score below 85.
+5. Otherwise collect reasons for human review: a non-blocking unmet requirement, an unconfirmable hard requirement, unclear location eligibility, on-site role, **no CV mapped for the family**, a selective/stretch family (Engineering Manager, Project Manager, Agile Coach, AI Engineer, AI Platform Engineer, Principal Engineer/Architect), or score below 85.
 6. Any reasons → **human**. None → **auto_eligible**.
 
 Weights (`config/criteria.yaml`): technical 30, seniority 20, responsibilities 20,
@@ -162,7 +162,7 @@ applybot run [--limit N]     ingest + score + draft. Never sends
 applybot ingest|score|draft  the same stages one at a time
 applybot queue | show ID     review drafts
 applybot edit ID             fix a letter in $EDITOR
-applybot approve ID          build outbox/<job>/ (refuses needs_edit unless --force)
+applybot approve ID          build outbox/<job>/ (refuses needs_edit; no override)
 applybot reject ID
 applybot send [--yes]        dry-run unless --yes
 applybot replies             poll IMAP, match, classify, draft

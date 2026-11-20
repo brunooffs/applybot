@@ -92,7 +92,7 @@ def render_text(res: dict) -> str:
                 out.append(f"        quote: \"{r['evidence']}\"")
         out.append("  (* = disqualifying if unmet)")
     arr = res["arrangement"]
-    out.append(f"WORK     remote={arr.get('remote', '?')}  portugal_eligible={arr.get('portugal_eligible', '?')}"
+    out.append(f"WORK     remote={arr.get('remote', '?')}  eligible={arr.get('eligible', arr.get('portugal_eligible', '?'))}"
                f"  type={arr.get('employment_type', '?')}")
     if arr.get("evidence"):
         out.append(f"         quote: \"{str(arr['evidence'])[:160]}\"")

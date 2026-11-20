@@ -37,12 +37,17 @@ def ingest(conn, cfg, jobs) -> dict:
     return stats
 
 
-def score_pending(conn, cfg, llm, limit: int | None = None) -> dict:
+def score_pending(conn, cfg, llm, limit: int | None = None, progress=None, should_stop=None) -> dict:
+    """`progress(done, total, job)` after each job; `should_stop()` is checked between jobs."""
     stats = {"scored": 0, "errors": 0, "auto_eligible": 0, "human": 0, "reject": 0}
     q = "SELECT * FROM jobs WHERE status='new' ORDER BY fetched_at"
     rows = conn.execute(q + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
-    for r in rows:
+    for i, r in enumerate(rows):
+        if should_stop and should_stop():
+            break
         job = row_to_job(r)
+        if progress:
+            progress(i, len(rows), job)
         try:
             verdict, raw = score_job(llm, job, cfg)
         except Exception as e:
@@ -55,16 +60,22 @@ def score_pending(conn, cfg, llm, limit: int | None = None) -> dict:
     return stats
 
 
-def draft_pending(conn, cfg, llm, limit: int | None = None) -> dict:
+def draft_pending(conn, cfg, llm, limit: int | None = None, min_score: float | None = None,
+                  progress=None, should_stop=None) -> dict:
+    """Only jobs scored at least `min_score` get a letter (None: all that are not rejected)."""
     stats = {"drafted": 0, "needs_edit": 0, "errors": 0}
     q = """SELECT j.*, s.language AS s_lang FROM jobs j
            JOIN scores s ON s.job_id = j.id
            LEFT JOIN applications a ON a.job_id = j.id
-           WHERE s.decision IN ('human','auto_eligible') AND a.job_id IS NULL
+           WHERE s.decision IN ('human','auto_eligible') AND a.job_id IS NULL AND s.overall >= ?
            ORDER BY s.overall DESC"""
-    rows = conn.execute(q + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
-    for r in rows:
+    rows = conn.execute(q + (f" LIMIT {int(limit)}" if limit else ""), (min_score or 0,)).fetchall()
+    for i, r in enumerate(rows):
+        if should_stop and should_stop():
+            break
         job = row_to_job(r)
+        if progress:
+            progress(i, len(rows), job)
         lang = r["s_lang"] or "en"
         if lang not in {"pt", "en", "es", "fr", "nl"}:
             lang = "en"
