@@ -449,11 +449,14 @@ def page_job(ctx, q):
             '<button class="danger" name="action" value="reject">Reject</button></div></form>'
             "<p class='mut'>Saving re-runs the automatic checks (numbers, copied posting wording, not-claimed skills). A letter with remaining flags cannot be approved.</p>")
     else:
-        parts.append(f'<div class="card"><b>{esc(app["subject"] or "")}</b><pre style="margin-top:8px">{esc(app["letter"] or "")}</pre></div>')
+        parts.append(f'<div class="card"><b>{esc(app["subject"] or "")}</b><pre id="letter-text" style="margin-top:8px">{esc(app["letter"] or "")}</pre></div>')
         if st == "approved":
             can_mail = bool(score and score["contact_email"])
+            cv_file = cfg.cv_file(score["cv_id"]) if score and score["cv_id"] else None
             row = (f'<a class="btn pri" href="{link("/send", id=job_id)}">Review and send…</a>' if can_mail else
-                   "<span class='mut'>No email in the posting: apply through the posting, then mark it.</span>")
+                   (f"{safe_link(job['url'], 'Open the application page')} "
+                    "<button type='button' data-copy='#letter-text'>Copy letter</button> "
+                    f"<span class='mut'>Upload {esc(cv_file.name) if cv_file else 'your CV'} (also in the folder below), then mark it.</span>"))
             parts.append(
                 f'<div class="row">{row}'
                 f'<form method="post" action="/job/action" style="display:inline">{hidden(tok, id=job_id)}'
@@ -629,7 +632,8 @@ def page_run(ctx, q):
         "<label><input type='checkbox' name='ingest' value='1' checked> <b>1. Fetch</b> new postings from your sources</label>"
         "<label><input type='checkbox' name='score' value='1' checked> <b>2. Score</b> at most "
         "<input type='number' name='score_limit' value='10' min='1' max='500' style='width:80px'> postings "
-        "<span class='mut'>(oldest first; a local model needs about a minute and a half each)</span></label>"
+        "<select name='order'><option value='relevance'>best matches first</option><option value='oldest'>oldest first</option></select> "
+        "<span class='mut'>(a local model needs about a minute and a half each)</span></label>"
         "<label><input type='checkbox' name='draft' value='1' checked> <b>3. Draft</b> letters for at most "
         "<input type='number' name='draft_limit' value='5' min='1' max='200' style='width:80px'> jobs scoring at least "
         f"<input type='number' name='min_score' value='{good}' min='0' max='100' style='width:80px'> "
@@ -655,7 +659,8 @@ def do_run_start(ctx, f):
     if problem:
         raise Redirect(link("/run", err=problem))
     opts = {"score_limit": _int(f.get("score_limit"), 10, 1, 500), "draft_limit": _int(f.get("draft_limit"), 5, 1, 200),
-            "min_score": _int(f.get("min_score"), 70, 0, 100)}
+            "min_score": _int(f.get("min_score"), 70, 0, 100),
+            "order": "oldest" if f.get("order") == "oldest" else "relevance"}
     try:
         runner.start(cfg.root, make_llm, steps, opts)
     except runner.SourceError as e:

@@ -6,7 +6,7 @@ import logging
 from . import db, history
 from .drafting import draft_checked
 from .models import Job
-from .prefilter import prefilter
+from .prefilter import prefilter, relevance
 from .scoring import score_job
 
 log = logging.getLogger("applybot.pipeline")
@@ -37,11 +37,18 @@ def ingest(conn, cfg, jobs) -> dict:
     return stats
 
 
-def score_pending(conn, cfg, llm, limit: int | None = None, progress=None, should_stop=None) -> dict:
-    """`progress(done, total, job)` after each job; `should_stop()` is checked between jobs."""
+def score_pending(conn, cfg, llm, limit: int | None = None, progress=None, should_stop=None, on_error=None,
+                  order: str = "relevance") -> dict:
+    """`order`: "relevance" (best title/location matches first) or "oldest" (fetch order).
+    `progress(done, total, job)` after each job; `should_stop()` is checked between jobs;
+    `on_error(job, exc)` when one job fails."""
     stats = {"scored": 0, "errors": 0, "auto_eligible": 0, "human": 0, "reject": 0}
-    q = "SELECT * FROM jobs WHERE status='new' ORDER BY fetched_at"
-    rows = conn.execute(q + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
+    rows = conn.execute("SELECT * FROM jobs WHERE status='new' ORDER BY fetched_at").fetchall()
+    if order == "relevance":
+        we = cfg.profile.get("work_eligibility")
+        rows = sorted(rows, key=lambda r: -relevance(row_to_job(r), cfg.criteria, we))   # stable: ties keep fetch order
+    if limit:
+        rows = rows[:int(limit)]
     for i, r in enumerate(rows):
         if should_stop and should_stop():
             break
@@ -52,6 +59,8 @@ def score_pending(conn, cfg, llm, limit: int | None = None, progress=None, shoul
             verdict, raw = score_job(llm, job, cfg)
         except Exception as e:
             log.warning("scoring %s failed: %s", job.id, e)
+            if on_error:
+                on_error(job, e)
             stats["errors"] += 1
             continue
         db.save_score(conn, job.id, verdict, raw)
@@ -61,7 +70,7 @@ def score_pending(conn, cfg, llm, limit: int | None = None, progress=None, shoul
 
 
 def draft_pending(conn, cfg, llm, limit: int | None = None, min_score: float | None = None,
-                  progress=None, should_stop=None) -> dict:
+                  progress=None, should_stop=None, on_error=None) -> dict:
     """Only jobs scored at least `min_score` get a letter (None: all that are not rejected)."""
     stats = {"drafted": 0, "needs_edit": 0, "errors": 0}
     q = """SELECT j.*, s.language AS s_lang FROM jobs j
@@ -83,6 +92,8 @@ def draft_pending(conn, cfg, llm, limit: int | None = None, min_score: float | N
             letter, issues, revisions = draft_checked(llm, job, lang, cfg, record=history.recorder(cfg, job, llm))
         except Exception as e:
             log.warning("drafting %s failed: %s", job.id, e)
+            if on_error:
+                on_error(job, e)
             stats["errors"] += 1
             continue
         status = "drafted" if not issues else "needs_edit"

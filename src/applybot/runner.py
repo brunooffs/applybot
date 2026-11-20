@@ -206,16 +206,22 @@ def _work(run: Run, home: Path, make_llm) -> None:
             st["board_errors"] = len(errs)
             run.results["ingest"] = st
             run.say("Ingest: " + ", ".join(f"{k} {v}" for k, v in st.items()))
+        def on_job_error(stage):
+            def f(job, e):
+                run.say(f"  ! {stage} failed for {job.company}: {job.title}: {type(e).__name__}: {e}")
+            return f
+
         if "score" in run.steps and not run.stop.is_set():
             run.say(f"Scoring up to {o['score_limit']} jobs…")
-            st = pipeline.score_pending(conn, cfg, llm, limit=o["score_limit"], progress=prog("score"),
-                                        should_stop=run.stop.is_set)
+            st = pipeline.score_pending(conn, cfg, llm, limit=o["score_limit"], order=o.get("order", "relevance"), progress=prog("score"),
+                                        should_stop=run.stop.is_set, on_error=on_job_error("score"))
             run.results["score"] = st
             run.say("Score: " + ", ".join(f"{k} {v}" for k, v in st.items()))
         if "draft" in run.steps and not run.stop.is_set():
             run.say(f"Drafting up to {o['draft_limit']} letters (minimum score {o['min_score']})…")
             st = pipeline.draft_pending(conn, cfg, llm, limit=o["draft_limit"], min_score=o["min_score"],
-                                        progress=prog("draft"), should_stop=run.stop.is_set)
+                                        progress=prog("draft"), should_stop=run.stop.is_set,
+                                        on_error=on_job_error("draft"))
             run.results["draft"] = st
             run.say("Draft: " + ", ".join(f"{k} {v}" for k, v in st.items()))
         run.state = "stopped" if run.stop.is_set() else "done"
