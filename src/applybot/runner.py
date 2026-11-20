@@ -213,7 +213,7 @@ def _work(run: Run, home: Path, make_llm) -> None:
 
         if "score" in run.steps and not run.stop.is_set():
             run.say(f"Scoring up to {o['score_limit']} jobs…")
-            st = pipeline.score_pending(conn, cfg, llm, limit=o["score_limit"], progress=prog("score"),
+            st = pipeline.score_pending(conn, cfg, llm, limit=o["score_limit"], order=o.get("order", "relevance"), progress=prog("score"),
                                         should_stop=run.stop.is_set, on_error=on_job_error("score"))
             run.results["score"] = st
             run.say("Score: " + ", ".join(f"{k} {v}" for k, v in st.items()))

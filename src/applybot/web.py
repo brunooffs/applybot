@@ -629,7 +629,8 @@ def page_run(ctx, q):
         "<label><input type='checkbox' name='ingest' value='1' checked> <b>1. Fetch</b> new postings from your sources</label>"
         "<label><input type='checkbox' name='score' value='1' checked> <b>2. Score</b> at most "
         "<input type='number' name='score_limit' value='10' min='1' max='500' style='width:80px'> postings "
-        "<span class='mut'>(oldest first; a local model needs about a minute and a half each)</span></label>"
+        "<select name='order'><option value='relevance'>best matches first</option><option value='oldest'>oldest first</option></select> "
+        "<span class='mut'>(a local model needs about a minute and a half each)</span></label>"
         "<label><input type='checkbox' name='draft' value='1' checked> <b>3. Draft</b> letters for at most "
         "<input type='number' name='draft_limit' value='5' min='1' max='200' style='width:80px'> jobs scoring at least "
         f"<input type='number' name='min_score' value='{good}' min='0' max='100' style='width:80px'> "
@@ -655,7 +656,8 @@ def do_run_start(ctx, f):
     if problem:
         raise Redirect(link("/run", err=problem))
     opts = {"score_limit": _int(f.get("score_limit"), 10, 1, 500), "draft_limit": _int(f.get("draft_limit"), 5, 1, 200),
-            "min_score": _int(f.get("min_score"), 70, 0, 100)}
+            "min_score": _int(f.get("min_score"), 70, 0, 100),
+            "order": "oldest" if f.get("order") == "oldest" else "relevance"}
     try:
         runner.start(cfg.root, make_llm, steps, opts)
     except runner.SourceError as e:

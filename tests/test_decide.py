@@ -159,3 +159,14 @@ def test_malformed_model_output_is_coerced(cfg):
     assert raw["dimensions"] == {} and len(raw["mandatory_requirements"]) == 2
     v = decide(raw, cfg.criteria, cfg.family_to_cv, cfg.family_names, [])
     assert v.decision == "reject"   # no scores at all: never auto
+
+
+def test_relevance_orders_scoring(cfg):
+    from applybot.models import Job
+    from applybot.prefilter import relevance
+    we = {"home_country": "Portugal", "authorised_regions": ["Portugal", "EU"]}
+    best = Job("t", "1", "A", "Senior Backend Engineer", "u", "Remote, Portugal", True, "x")
+    mid = Job("t", "2", "B", "Software Engineer", "u", "Remote", True, "x")
+    worst = Job("t", "3", "C", "Senior Backend Engineer", "u", "Remote - US", True, "x")
+    r = [relevance(j, cfg.criteria, we) for j in (best, mid, worst)]
+    assert r[0] > r[1] > r[2]
