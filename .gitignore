@@ -15,3 +15,5 @@ config/profile.yaml
 config/settings.yaml
 cvs/cvs.yaml
 .DS_Store
+build/
+dist/
