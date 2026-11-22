@@ -270,3 +270,30 @@ def test_extract_json_repairs_unescaped_quotes():
     assert d["a"][1]["quote"] == 'say "hi" now'
     with pytest.raises(LLMError):
         extract_json('{"a": [1, 2')
+
+
+def test_same_job_is_recognised_across_cv_versions():
+    """Names, titles and date styles differ between a CV and facts.yaml; the job is still the same one."""
+    from applybot import factsimport as fi
+    facts_text = (
+        "experience:\n  employers:\n"
+        "    - name: Netwerven B.V. / Endouble (acquired by Phenon in 2020)\n      roles:\n"
+        "        - title: Senior Software Engineer / Consultant\n          dates: 2014 to 2015\n"
+        "    - name: Critical TechWorks (BMW Group)\n      roles:\n"
+        "        - title: Software Engineer\n          dates: 2020 to 2022\n"
+        "        - title: Backend Architect & Developer\n          dates: May 2022 to present\n"
+    )
+    mk = lambda e, t, d: {"kind": "role", "fields": {"employer": e, "title": t, "dates": d,   # noqa: E731
+                                                     "stack": [], "work": "w", "highlights": []}}
+    items = [mk("Netwerven", "Software Engineer", "2014–2015"),
+             mk("Critical TechWorks (BMW Group)", "Backend Developer", "2020–2022"),
+             mk("Critical TechWorks (BMW Group)", "Backend Architect & Developer", "2022–Present"),
+             mk("Critical TechWorks (BMW Group)", "Full-Stack Developer", "2019–2020")]
+    import yaml
+    fi.mark_existing(yaml.safe_load(facts_text), items)
+    # 2022-present in the CV is 2022-2025 in an older facts file only when the end year matches; here the
+    # facts say "present" and the CV says "Present": the same job.
+    assert [i["existing"] for i in items] == [True, True, True, False]
+    out = fi.merge_text(facts_text, items)
+    assert out.count("Netwerven") == 1 and out.count("Backend") == 1 and "Full-Stack Developer" in out
+    assert yaml.safe_load(out) == fi.merge_data(yaml.safe_load(facts_text), items)
