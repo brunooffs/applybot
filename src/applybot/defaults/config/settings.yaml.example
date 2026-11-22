@@ -15,11 +15,14 @@ llm:
     max_tokens: 2000
   temperature: 0
   # Per-stage override of the default provider above. A stage not listed uses
-  # `provider`. Stages: score, draft, verify, reply (classify + draft replies).
+  # `provider`. Stages: score, draft, revise, verify, reply (classify + draft replies),
+  # extract (reads your CV on the Facts page).
   # verify = the fact-check that stops invented claims, worth a hosted model.
+  # extract defaults to ollama so a first try costs nothing; anthropic reads CVs better.
   stages:
     draft: ollama
     verify: anthropic
+    extract: ollama
 
 mail:
   # Your own mail server or provider (SMTP + IMAP). Password is NEVER stored here:

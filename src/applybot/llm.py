@@ -50,7 +50,7 @@ def _post(who: str, url: str, timeout: float, **kw) -> httpx.Response:
 
 
 PROVIDERS = ("ollama", "anthropic")
-STAGES = ("score", "draft", "revise", "verify", "reply")
+STAGES = ("score", "draft", "revise", "verify", "reply", "extract")
 
 
 def for_stage(llm, name: str):

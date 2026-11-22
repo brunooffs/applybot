@@ -120,7 +120,7 @@ def anthropic_key_problem(cfg, steps) -> str | None:
     from .llm import STAGES
     llm = cfg.settings.get("llm", {})
     default, stages = llm.get("provider", "ollama"), llm.get("stages") or {}
-    needs = {"score": "score" in steps, "draft": "draft" in steps, "verify": "draft" in steps, "revise": "draft" in steps}
+    needs = {"score": "score" in steps, "draft": "draft" in steps, "verify": "draft" in steps, "revise": "draft" in steps, "extract": "extract" in steps}
     bad = [s for s in STAGES if needs.get(s) and stages.get(s, default) == "anthropic"]
     if bad and not os.environ.get("ANTHROPIC_API_KEY"):
         return ("Stage(s) " + ", ".join(bad) + " use Anthropic but ANTHROPIC_API_KEY is not set in the environment this "

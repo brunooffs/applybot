@@ -26,7 +26,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from . import actions, db, history, replies, runner, scoring, trial
+from . import actions, db, factsimport, history, replies, runner, scoring, trial
 from .config import load_config
 from .llm import LLM
 from .models import Job
@@ -35,6 +35,7 @@ from .scoring import effective_status
 esc = html.escape
 SEND_LOCK = threading.Lock()     # one send at a time: a double click cannot send twice
 MAX_BODY = 1_000_000
+MAX_UPLOAD = 12_000_000   # a CV upload (/facts/upload only)
 
 # Results of "try", kept in memory so you can come back to one, and save it to the review queue.
 # Lost when the server stops; the review queue itself is in the database.
@@ -113,7 +114,7 @@ details{margin:10px 0}summary{cursor:pointer;color:var(--mut)}ul{margin:6px 0;pa
 """
 
 NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("review", "/queue", "Review"),
-       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
+       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("facts", "/facts", "Facts"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
        ("settings", "/settings", "Models"))
 
 
@@ -124,6 +125,8 @@ def active_for(path: str, q: dict) -> str:
         return "settings"
     if path in ("/sources", "/sources/save", "/sources/check"):
         return "sources"
+    if path in ("/facts", "/facts/upload", "/facts/save", "/facts/discard"):
+        return "facts"
     if path in ("/run", "/run/start", "/run/cancel"):
         return "run"
     if path == "/history":
@@ -499,6 +502,7 @@ STAGE_HELP = {
     "revise": "Rewrites a letter after the fact-check flagged claims.",
     "verify": "The fact-check that stops invented claims. Worth a strong model.",
     "reply": "Classifies recruiter replies and drafts answers.",
+    "extract": "Reads your CV on the Facts page and proposes facts. Ollama keeps the CV on this machine; Anthropic is better at it.",
 }
 
 
@@ -534,6 +538,198 @@ def do_settings_save(ctx, f):
     except actions.ActionError as e:
         raise Redirect(link("/settings", err=str(e)))
     raise Redirect(link("/settings", ok="Saved. The next action uses these models."))
+
+
+# --- facts from a CV -----------------------------------------------------------------------
+
+FACTS_ORDER = ("identity", "experience_total", "role", "education", "certification", "language", "skill")
+FACTS_TITLE = {"identity": "Contact details", "experience_total": "Years of experience", "role": "Jobs",
+               "education": "Education", "certification": "Certifications", "language": "Languages", "skill": "Skills"}
+FACTS_LABEL = {"field": "Field", "value": "Value", "language": "Language", "level": "Level", "employer": "Employer",
+               "title": "Job title", "dates": "Dates", "stack": "Technologies (comma separated)", "work": "What you did",
+               "highlights": "Achievements (one per line)", "category": "Category", "item": "Skill", "name": "Name",
+               "issuer": "Issuer", "year": "Year", "institution": "Institution", "degree": "Degree as written"}
+
+
+def _p(pid: str, field: str) -> str:
+    return f"{pid}__{field}"
+
+
+def _fact_summary(p: dict) -> str:
+    f = p["fields"]
+    main = {"identity": f"{f.get('field')}: {f.get('value')}", "role": f"{f.get('title')} at {f.get('employer')} ({f.get('dates')})",
+            "skill": f.get("item"), "certification": f.get("name"), "education": f"{f.get('institution')} {f.get('field')}",
+            "language": f"{f.get('language')}: {f.get('level')}", "experience_total": f.get("value")}[p["kind"]]
+    return esc(str(main))
+
+
+def _fact_row(p: dict) -> str:
+    pid, f, kind = p["id"], p["fields"], p["kind"]
+    quote = f"<div class='mut' style='font-size:12.5px;margin-top:4px'>From your CV: “{esc(p['quote'])}”</div>"
+    if kind == "skill":
+        lv = "".join(f"<option value='{v}'>{v}</option>" for v in factsimport.LEVELS)
+        cats = "".join(f"<option value='{c}'{' selected' if c == f['category'] else ''}>{c}</option>" for c in factsimport.SKILL_CATEGORIES)
+        return (f"<div class='card'><div class='row'><b>{esc(f['item'])}</b><select name='{_p(pid, 'category')}'>{cats}</select>"
+                f"<select name='{_p(pid, 'level')}' aria-label='level'><option value=''>— leave out —</option>{lv}</select></div>{quote}</div>")
+    inputs = ""
+    for name in factsimport.KINDS[kind][0]:
+        val = f.get(name, "")
+        label = FACTS_LABEL.get(name, name)
+        if name == "field" and kind == "identity":
+            inputs += f"<input type='hidden' name='{_p(pid, name)}' value='{esc(val)}'>"
+            continue
+        if name == "highlights":
+            inputs += f"<label>{label}</label><textarea name='{_p(pid, name)}' rows='3'>{esc(chr(10).join(val))}</textarea>"
+        elif name == "work":
+            inputs += f"<label>{label}</label><textarea name='{_p(pid, name)}' rows='2'>{esc(val)}</textarea>"
+        elif name == "stack":
+            inputs += f"<label>{label}</label><input type='text' name='{_p(pid, name)}' value='{esc(', '.join(val))}'>"
+        else:
+            inputs += f"<label>{label}</label><input type='text' name='{_p(pid, name)}' value='{esc(val)}'>"
+    head = f"<label style='display:flex;gap:8px;align-items:center'><input type='checkbox' name='{_p(pid, 'keep')}' value='1' checked> <b>Keep</b> <span class='mut'>{_fact_summary(p)}</span></label>"
+    return f"<div class='card'>{head}{inputs}{quote}</div>"
+
+
+def page_facts(ctx, q):
+    cfg, tok = ctx["cfg"], ctx["tok"]
+    llm = cfg.settings.get("llm", {})
+    prov = (llm.get("stages") or {}).get("extract") or llm.get("provider", "ollama")
+    model = (llm.get(prov) or {}).get("model", "?")
+    job, state = factsimport.CURRENT, factsimport.load_state(cfg)
+    template = factsimport.is_template(cfg.facts)
+    where = ("Your CV text is sent to the Anthropic API to be read." if prov == "anthropic"
+             else "Your CV is read by Ollama on this computer and goes nowhere else.")
+    warn = runner.anthropic_key_problem(cfg, {"extract"})
+    body = ("<h1>Facts</h1><p class='sub'>Build your <code>facts.yaml</code> from a CV (PDF, DOCX or text; LinkedIn's "
+            "<i>Save to PDF</i> works too). The model only proposes; nothing is written until you review it and press Save.</p>")
+    if warn:
+        body += f"<div class='banner bad'>{esc(warn)}</div>"
+    if template:
+        body += ("<div class='banner'>Your facts.yaml is still the fictional example (Alex Example). Saving an import "
+                 "replaces it with your own facts; the example is kept as <code>facts.yaml.bak</code>.</div>")
+    running = factsimport.is_running()
+    if job and job.state == "running":
+        body += f"<!--refresh--><div class='card'><span class='badge'>Working</span> {esc(job.message)}</div>"
+    elif job and job.state == "failed":
+        body += f"<div class='banner bad'>Could not read the CV: {esc(job.message)}</div>"
+    body += ("<div class='card'><form method='post' action='/facts/upload' enctype='multipart/form-data' data-busy>"
+             f"{hidden(tok)}<label>Your CV</label><input type='file' name='cv' accept='.pdf,.docx,.txt,.md'>"
+             f"<p class='mut'>Read by <b>{esc(prov)}</b> ({esc(model)}). {where} Change this on the Models page (stage <code>extract</code>).</p>"
+             f"<button class='pri'{' disabled' if running else ''}>Read my CV</button> <span class='busy mut' hidden>Uploading…</span></form></div>")
+    if state:
+        props = state.get("proposals") or []
+        new = [p for p in props if not p.get("existing")]
+        old = [p for p in props if p.get("existing")]
+        body += f"<h2>Review: {esc(state.get('filename', 'CV'))}</h2>"
+        if state.get("dropped"):
+            body += (f"<p class='mut'>{int(state['dropped'])} suggestion(s) were discarded because their source line was not in your CV.</p>")
+        if not new:
+            body += "<p>Nothing new to add: everything found is already in your facts.</p>"
+        else:
+            body += ("<p class='mut'>Edit anything that is wrong and untick what you don't want. For each skill pick how you know it: "
+                     "<b>production</b> (used in professional systems), <b>project</b> (independent projects only), <b>working</b> "
+                     "(can work with it) or <b>familiarity</b> (concepts only). A skill left on “leave out” is not saved, and unsaved "
+                     "skills are never used in letters. Degree completion and availability stay <code>TODO</code> for you to fill in.</p>")
+            rows = ""
+            for kind in FACTS_ORDER:
+                group = [p for p in new if p["kind"] == kind]
+                if group:
+                    rows += f"<h3>{FACTS_TITLE[kind]} ({len(group)})</h3>" + "".join(_fact_row(p) for p in group)
+            body += (f"<form method='post' action='/facts/save'>{hidden(tok)}{rows}"
+                     "<p><button class='pri'>Save to facts.yaml</button> <span class='mut'>A backup is kept as facts.yaml.bak.</span></p></form>")
+        if old:
+            body += ("<details><summary>Already in your facts (" + str(len(old)) + ")</summary>"
+                     + "".join(f"<div class='mut'>· {_fact_summary(p)}</div>" for p in old) + "</details>")
+        body += (f"<form method='post' action='/facts/discard' style='margin-top:14px'>{hidden(tok)}"
+                 "<button class='danger'>Discard this import</button></form>")
+    return "Facts", body
+
+
+def do_facts_upload(ctx, f):
+    cfg = ctx["cfg"]
+    problem = runner.anthropic_key_problem(cfg, {"extract"})
+    if problem:
+        raise Redirect(link("/facts", err=problem))
+    name, data = (f.get("_files") or {}).get("cv", ("", b""))
+    if not name or not data:
+        raise Redirect(link("/facts", err="Choose a file first."))
+    try:
+        text = factsimport.read_document(name, data)
+        factsimport.start(cfg.root, make_llm, name, text)
+    except factsimport.ImportProblem as e:
+        raise Redirect(link("/facts", err=str(e)))
+    raise Redirect(link("/facts", ok="Reading your CV. This page refreshes while it works."))
+
+
+def do_facts_save(ctx, f):
+    cfg = ctx["cfg"]
+    state = factsimport.load_state(cfg)
+    if not state:
+        raise Redirect(link("/facts", err="There is no pending import."))
+    items = []
+    for p in state["proposals"]:
+        if p.get("existing"):
+            continue
+        pid, kind = p["id"], p["kind"]
+        get = lambda name: f.get(_p(pid, name), "").strip()   # noqa: E731
+        fields = {}
+        for name in factsimport.KINDS[kind][0]:
+            if name in factsimport.LIST_FIELDS:
+                fields[name] = factsimport._clean_list(get(name) if name == "stack" else
+                                                       [x.strip() for x in get(name).splitlines()])
+            else:
+                fields[name] = factsimport._clean_str(get(name))
+        if kind == "skill":
+            level = get("level")
+            if level not in factsimport.LEVELS:
+                continue            # no level chosen: not saved
+            fields["level"] = level
+            if fields["category"] not in factsimport.SKILL_CATEGORIES:
+                fields["category"] = "other"
+        elif not f.get(_p(pid, "keep")):
+            continue
+        if kind == "identity" and fields["field"] not in factsimport.IDENTITY_FIELDS:
+            continue
+        if not fields[factsimport.KINDS[kind][1]]:
+            continue
+        items.append({"kind": kind, "fields": fields, "quote": p.get("quote", "")})
+    if not items:
+        raise Redirect(link("/facts", err="Nothing is selected to save."))
+    try:
+        factsimport.apply_import(cfg, items, from_skeleton=factsimport.is_template(cfg.facts))
+    except factsimport.ImportProblem as e:
+        raise Redirect(link("/facts", err=str(e)))
+    factsimport.discard_state(cfg)
+    raise Redirect(link("/facts", ok=f"Saved {len(items)} items to facts.yaml. Open it to resolve the remaining TODO lines "
+                                    "(`applybot doctor` lists them)."))
+
+
+def do_facts_discard(ctx, f):
+    factsimport.discard_state(ctx["cfg"])
+    raise Redirect(link("/facts", ok="Import discarded."))
+
+
+def parse_multipart(ctype: str, raw: bytes) -> dict:
+    """A multipart/form-data body -> {field: text, '_files': {field: (filename, bytes)}}."""
+    from email import policy
+    from email.parser import BytesParser
+    msg = BytesParser(policy=policy.HTTP).parsebytes(
+        b"Content-Type: " + ctype.encode("latin-1", "replace") + b"\r\nMIME-Version: 1.0\r\n\r\n" + raw)
+    f: dict = {}
+    files: dict = {}
+    if msg.is_multipart():
+        for part in msg.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            if not name:
+                continue
+            data = part.get_payload(decode=True) or b""
+            if part.get_filename() is not None:
+                files[name] = (part.get_filename(), data)
+            else:
+                f[name] = data.decode("utf-8", "replace")
+    f["_files"] = files
+    f["_multi"] = {k: [v] for k, v in f.items() if isinstance(v, str)}
+    return f
 
 
 # --- sources and runs ----------------------------------------------------------------------
@@ -886,9 +1082,10 @@ def do_replies_check(ctx, f):
 
 
 GET_ROUTES = {"/": lambda c, q: page_overview(c), "/try": page_try_view, "/queue": page_queue, "/job": page_job,
-              "/send": page_send, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
+              "/send": page_send, "/facts": page_facts, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
 POST_ROUTES = {"/try/save": do_try_save, "/job/action": do_job_action, "/send": do_send, "/message/save": do_message_save,
                "/reply": do_reply_send, "/replies/check": do_replies_check, "/settings/save": do_settings_save,
+               "/facts/upload": do_facts_upload, "/facts/save": do_facts_save, "/facts/discard": do_facts_discard,
                "/sources/save": do_sources_save, "/sources/check": do_sources_check, "/run/start": do_run_start,
                "/run/cancel": do_run_cancel}
 
@@ -974,11 +1171,16 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = -1
-        if not 0 <= length <= MAX_BODY:
+        if not 0 <= length <= (MAX_UPLOAD if u.path == "/facts/upload" else MAX_BODY):
             return self._send(413, "Request too large.")
-        multi = parse_qs(self.rfile.read(length).decode("utf-8", "replace"), keep_blank_values=True)
-        f = {k: v[0] for k, v in multi.items()}
-        f["_multi"] = multi   # every value of a repeated field (checkbox groups)
+        raw = self.rfile.read(length)
+        ctype = self.headers.get("Content-Type", "")
+        if u.path == "/facts/upload" and ctype.startswith("multipart/form-data"):
+            f = parse_multipart(ctype, raw)
+        else:
+            multi = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)
+            f = {k: v[0] for k, v in multi.items()}
+            f["_multi"] = multi   # every value of a repeated field (checkbox groups)
         if not secrets.compare_digest(f.get("_t", ""), self.token):
             return self._send(403, "Forbidden: missing or wrong token. Reload the page and try again.")
         ctx = self._ctx()
