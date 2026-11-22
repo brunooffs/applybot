@@ -24,10 +24,24 @@ def extract_json(text: str) -> dict:
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1 or end < start:
         raise LLMError(f"no JSON object in model output: {text[:200]!r}")
+    body = text[start : end + 1]
     try:
-        return json.loads(text[start : end + 1])
+        return json.loads(body)
     except json.JSONDecodeError as e:
-        raise LLMError(f"invalid JSON from model: {e}") from e
+        first = e
+    # Models quote the document they read and forget to escape the quotes inside it.
+    # The parser trips just after such a quote, so escape that one and try again.
+    for _ in range(40):
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError as e:
+            if "delimiter" not in e.msg:
+                break
+            q = body.rfind('"', 0, e.pos)
+            if q == -1:
+                break
+            body = body[:q] + "\\" + body[q:]
+    raise LLMError(f"invalid JSON from model: {first}") from first
 
 
 def _check(r: httpx.Response, who: str) -> None:
@@ -90,7 +104,7 @@ class LLM:
     def describe(self) -> str:
         return "  ".join(f"{s}={self.stage(s).provider}" for s in STAGES)
 
-    def _raw(self, system: str, user: str) -> str:
+    def _raw(self, system: str, user: str, max_tokens: int | None = None) -> str:
         if self.provider == "ollama":
             c = self.cfg["ollama"]
             r = _post(
@@ -115,7 +129,7 @@ class LLM:
                 raise LLMAPIError("ANTHROPIC_API_KEY is not set")
             body = {
                 "model": c["model"],
-                "max_tokens": c.get("max_tokens", 2000),
+                "max_tokens": max_tokens or c.get("max_tokens", 2000),
                 "system": system,
                 "messages": [{"role": "user", "content": user}],
             }
@@ -129,14 +143,17 @@ class LLM:
                 json=body,
             )
             _check(r, "Anthropic API")
-            return "".join(b.get("text", "") for b in r.json()["content"])
+            data = r.json()
+            if data.get("stop_reason") == "max_tokens":
+                raise LLMError(f"Anthropic reply was cut off at {body['max_tokens']} tokens")
+            return "".join(b.get("text", "") for b in data["content"])
         raise LLMAPIError(f"unknown llm provider {self.provider!r}")
 
-    def complete_json(self, system: str, user: str) -> dict:
+    def complete_json(self, system: str, user: str, max_tokens: int | None = None) -> dict:
         last: Exception | None = None
         for _ in range(2):  # one retry on malformed JSON
             try:
-                return extract_json(self._raw(system, user))
+                return extract_json(self._raw(system, user, max_tokens))
             except LLMError as e:
                 last = e
         raise LLMError(str(last))

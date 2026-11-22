@@ -260,3 +260,13 @@ def test_pdf_line_break_hyphens_and_ligatures_do_not_break_quote_checks():
     p = fi.sanitize({"items": [item("skill", "event-driven service and an office tool", category="backend", item="Python")]})
     kept, dropped = fi.verify(p, text)
     assert len(kept) == 1 and dropped == 0
+
+
+def test_extract_json_repairs_unescaped_quotes():
+    from applybot.llm import LLMError, extract_json
+    raw = '{"a": [{"quote": "Led the "Smart WallBox" team", "n": "x"}, {"quote": "say "hi" now"}]}'
+    d = extract_json(raw)
+    assert d["a"][0]["quote"] == 'Led the "Smart WallBox" team'
+    assert d["a"][1]["quote"] == 'say "hi" now'
+    with pytest.raises(LLMError):
+        extract_json('{"a": [1, 2')
