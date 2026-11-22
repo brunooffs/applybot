@@ -3,7 +3,7 @@ import json
 import re
 import shutil
 import threading
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 import pytest
 
@@ -408,16 +408,16 @@ def test_saved_try_cannot_overwrite_an_approved_one(env):
 
 def test_models_page_lists_all_stages_and_saves(env):
     code, page, _ = req(env, "GET", "/settings")
-    assert code == 200 and all(f'name="{s}"' in page for s in ("score", "draft", "revise", "verify", "reply"))
+    assert code == 200 and all(f'name="{s}"' in page for s in ("score", "draft", "revise", "verify", "reply", "extract"))
     path = env.home / "config" / "settings.yaml"
     before = path.read_text()
     code, _, loc = req(env, "POST", "/settings/save",
-                       {"score": "anthropic", "draft": "ollama", "revise": "anthropic", "verify": "anthropic", "reply": "ollama"})
+                       {"score": "anthropic", "draft": "ollama", "revise": "anthropic", "verify": "anthropic", "reply": "ollama", "extract": "ollama"})
     assert code == 303 and "ok=" in loc
     after = path.read_text()
     import yaml
     assert yaml.safe_load(after)["llm"]["stages"] == {"score": "anthropic", "draft": "ollama", "revise": "anthropic",
-                                                       "verify": "anthropic", "reply": "ollama"}
+                                                       "verify": "anthropic", "reply": "ollama", "extract": "ollama"}
     assert "# Runtime settings." in after and "daily_cap" in after            # comments and other sections untouched
     assert (env.home / "config" / "settings.yaml.bak").read_text() == before
     assert re.search(r'name="score">.*?value="anthropic" selected', req(env, "GET", "/settings")[1])   # no restart needed
@@ -437,7 +437,7 @@ def test_save_stages_inserts_block_when_missing(tmp_path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "settings.yaml").write_text("llm:\n  provider: ollama\n  temperature: 0\n\nmail:\n  daily_cap: 15\n")
     cfg = Config(tmp_path, {}, {}, {}, {}, {}, [])
-    actions.save_stages(cfg, {s: "ollama" for s in ("score", "draft", "revise", "verify", "reply")})
+    actions.save_stages(cfg, {s: "ollama" for s in ("score", "draft", "revise", "verify", "reply", "extract")})
     import yaml
     d = yaml.safe_load((tmp_path / "config" / "settings.yaml").read_text())
     assert d["llm"]["stages"]["verify"] == "ollama" and d["mail"] == {"daily_cap": 15} and d["llm"]["provider"] == "ollama"
@@ -585,7 +585,7 @@ def test_run_needs_a_step_and_blocks_missing_anthropic_key(env, monkeypatch):
     from applybot import actions
     _, _, loc = req(env, "POST", "/run/start", {})
     assert "err=" in loc
-    actions.save_stages(env.cfg, {s: "anthropic" for s in ("score", "draft", "verify", "revise", "reply")})
+    actions.save_stages(env.cfg, {s: "anthropic" for s in ("score", "draft", "verify", "revise", "reply", "extract")})
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     _, _, loc = req(env, "POST", "/run/start", {"score": "1"})
     assert "err=" in loc and "ANTHROPIC_API_KEY" in loc
@@ -595,3 +595,83 @@ def test_approved_job_without_email_offers_link_and_copy(env):
     jid = seed(env, status="approved", contact=None)
     page = req(env, "GET", "/job?" + urlencode({"id": jid}))[1]
     assert "Open the application page" in page and "Copy letter" in page and 'id="letter-text"' in page
+
+
+# --- facts from a CV ------------------------------------------------------------------
+
+def upload_cv(env, filename, data, token=None):
+    boundary = "----applybotTest"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"_t\"\r\n\r\n{token or env.token}\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"cv\"; filename=\"{filename}\"\r\n"
+            "Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    c = http.client.HTTPConnection("127.0.0.1", env.port)
+    c.request("POST", "/facts/upload", body=body, headers={
+        "Host": f"127.0.0.1:{env.port}", "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    r = c.getresponse()
+    r.read()
+    loc = r.getheader("Location")
+    c.close()
+    return r.status, loc
+
+
+def wait_for_import():
+    import time
+
+    from applybot import factsimport
+    for _ in range(100):
+        if factsimport.CURRENT is None or factsimport.CURRENT.state != "running":
+            return factsimport.CURRENT
+        time.sleep(0.05)
+
+
+def test_facts_page_upload_review_and_save(env, monkeypatch):
+    from applybot import factsimport
+    from test_factsimport import BAD, CV, GOOD, Fake
+    factsimport.CURRENT = None
+    monkeypatch.setattr(web, "make_llm", lambda cfg: Fake(GOOD + BAD))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-real")
+    assert "Read my CV" in req(env, "GET", "/facts")[1]
+    code, loc = upload_cv(env, "cv.txt", CV.encode())
+    assert code == 303 and "ok=" in loc
+    assert wait_for_import().state == "done"
+    page = req(env, "GET", "/facts")[1]
+    assert "Initech Payments" in page and "From your CV" in page and "Kafka" not in page   # dropped one never shown
+    assert "fictional example" in page                                                      # template notice
+    state = factsimport.load_state(load_config(env.home))
+    skill = next(p for p in state["proposals"] if p["kind"] == "skill" and p["fields"]["item"] == "Python")
+    role = next(p for p in state["proposals"] if p["kind"] == "role" and p["fields"]["employer"] == "Initech Payments")
+    form = {f"{p['id']}__keep": "1" for p in state["proposals"] if p["kind"] != "skill"}
+    for p in state["proposals"]:
+        for k, v in p["fields"].items():
+            form[f"{p['id']}__{k}"] = ", ".join(v) if isinstance(v, list) else v
+    form[f"{skill['id']}__level"] = "production"          # Python chosen; MySQL left on "leave out"
+    form[f"{role['id']}__title"] = "Principal Backend Engineer"   # an edit made in the review
+    code, _, loc = req(env, "POST", "/facts/save", form)
+    assert code == 303 and "ok=" in loc, loc
+    d = yaml_load(env.home / "config" / "facts.yaml")
+    assert d["identity"]["email"] == "sam@example.com" and "Alex" not in str(d)
+    assert d["skills"] == {"backend": {"level": "production", "items": ["Python"]}}   # MySQL had no level: not written
+    assert d["experience"]["employers"][0]["roles"][0]["title"] == "Principal Backend Engineer"
+    assert (env.home / "config" / "facts.yaml.bak").exists()
+    assert factsimport.load_state(load_config(env.home)) is None
+
+
+def yaml_load(path):
+    import yaml
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def test_facts_upload_errors_and_token(env, monkeypatch):
+    from applybot import factsimport
+    factsimport.CURRENT = None
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    code, loc = upload_cv(env, "cv.exe", b"x" * 500)
+    assert code == 303 and "err=" in loc and "Unsupported" in unquote(loc)
+    assert upload_cv(env, "cv.txt", b"hello", token="wrong")[0] == 403          # CSRF token still required
+
+
+def test_facts_save_without_import_or_selection(env):
+    from applybot import factsimport
+    factsimport.discard_state(load_config(env.home))
+    _, _, loc = req(env, "POST", "/facts/save", {})
+    assert "err=" in loc

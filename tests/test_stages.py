@@ -17,7 +17,7 @@ def test_stage_uses_override_and_default():
     assert llm.stage("verify").provider == "anthropic"
     assert llm.stage("score").provider == "ollama"          # not listed -> default
     assert llm.stage("verify") is llm.stage("verify")       # one client per provider
-    assert llm.describe() == "score=ollama  draft=ollama  revise=ollama  verify=anthropic  reply=ollama"
+    assert llm.describe() == "score=ollama  draft=ollama  revise=ollama  verify=anthropic  reply=ollama  extract=ollama"
 
 
 def test_no_stages_block_means_one_provider():

@@ -59,8 +59,9 @@ Your personal files live in **`~/.applybot`** (on Windows `C:\Users\<you>\.apply
 
 Then:
 
-1. Edit `config/facts.yaml` with YOUR details: resolve every `TODO` and
-   `CONFIRM`. This file is the only thing letters may draw from.
+1. Build `config/facts.yaml`: on the dashboard's **Facts** page upload your CV (PDF, DOCX or text) and review
+   what the model proposes, or edit the file by hand. Either way, resolve every `TODO` and `CONFIRM`. This file
+   is the only thing letters may draw from.
 2. Describe yourself and your target roles in `config/profile.yaml`
    (including `work_eligibility`, where you can work without a visa).
 3. Put your CVs in `cvs/` (names in `cvs/cvs.yaml`). `applybot cvs` shows what

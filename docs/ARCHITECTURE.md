@@ -199,3 +199,18 @@ a real LLM's judgement quality, and ATS forms. Those need real runs.
 8. **ATS form filling** with a headless browser (Playwright), one ATS at a time, only for the answers that come from verified facts.
 9. **Inbound recruiter mail** (people who write to you first) and an HN "Who is hiring" source.
 10. **Only then** consider letting high-confidence applications auto-send, and only after weeks of review showing it would have been right.
+
+## Facts import (`factsimport.py`, dashboard "Facts" page)
+
+`facts.yaml` can be built from a CV (PDF, DOCX or text). The same rule as everywhere else applies: the
+model extracts, plain code checks, the person decides.
+
+1. The document is read locally (`pypdf` for PDF, the standard library for DOCX).
+2. The `extract` stage (default Ollama, switchable on the Models page) proposes items, each with the CV line it came from.
+3. A proposal is dropped unless its quote occurs in the CV text and the thing it names (employer, skill,
+   certificate, school) occurs too, so a made-up fact cannot carry a made-up source.
+4. The person reviews on the Facts page. Skill levels are never inferred (a CV cannot tell professional work from a hobby);
+   a skill without a level is not written. Degree completion and availability stay `TODO`.
+5. `merge_text` inserts the confirmed items into `facts.yaml` line by line, so comments and hand-written content survive.
+   `merge_data` computes the same merge on parsed data; if the two disagree nothing is written. The old file is kept as `facts.yaml.bak`.
+6. While `facts.yaml` is still the fictional example, the import starts from a blank skeleton instead of adding to it.
