@@ -229,7 +229,9 @@ def extract(client, text: str, progress=None) -> tuple[list[dict], int]:
     for i, chunk in enumerate(parts):
         if progress:
             progress(i, len(parts))
-        raw = client.complete_json(SYSTEM, "CV TEXT:\n" + chunk)
+        # A whole CV as JSON is long; the default reply limit would cut it off.
+        extra = {"max_tokens": 8000} if hasattr(client, "stage") else {}
+        raw = client.complete_json(SYSTEM, "CV TEXT:\n" + chunk, **extra)
         kept, d = verify(sanitize(raw), text)
         dropped += d
         for p in kept:
