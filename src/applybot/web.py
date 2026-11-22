@@ -702,8 +702,8 @@ def do_facts_save(ctx, f):
     except factsimport.ImportProblem as e:
         raise Redirect(link("/facts", err=str(e)))
     factsimport.discard_state(cfg)
-    raise Redirect(link("/facts", ok=f"Saved {len(items)} items to facts.yaml. Open it to resolve the remaining TODO lines "
-                                    "(`applybot doctor` lists them)."))
+    raise Redirect(link("/facts", ok=f"Saved {len(items)} items to {cfg.root / 'config' / 'facts.yaml'}. Open it to resolve the "
+                                    "remaining TODO lines (`applybot doctor` lists them)."))
 
 
 def do_facts_discard(ctx, f):
