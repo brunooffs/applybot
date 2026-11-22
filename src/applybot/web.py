@@ -569,7 +569,9 @@ def _fact_row(p: dict) -> str:
     if kind == "skill":
         lv = "".join(f"<option value='{v}'>{v}</option>" for v in factsimport.LEVELS)
         cats = "".join(f"<option value='{c}'{' selected' if c == f['category'] else ''}>{c}</option>" for c in factsimport.SKILL_CATEGORIES)
-        return (f"<div class='card'><div class='row'><b>{esc(f['item'])}</b><select name='{_p(pid, 'category')}'>{cats}</select>"
+        return (f"<div class='card'><div class='row'><b>{esc(f['item'])}</b>"
+                f"<input type='hidden' name='{_p(pid, 'item')}' value='{esc(f['item'])}'>"
+                f"<select name='{_p(pid, 'category')}'>{cats}</select>"
                 f"<select name='{_p(pid, 'level')}' aria-label='level'><option value=''>— leave out —</option>{lv}</select></div>{quote}</div>")
     inputs = ""
     for name in factsimport.KINDS[kind][0]:

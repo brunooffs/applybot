@@ -642,8 +642,16 @@ def test_facts_page_upload_review_and_save(env, monkeypatch):
     role = next(p for p in state["proposals"] if p["kind"] == "role" and p["fields"]["employer"] == "Initech Payments")
     form = {f"{p['id']}__keep": "1" for p in state["proposals"] if p["kind"] != "skill"}
     for p in state["proposals"]:
+        if p["kind"] == "skill":
+            form[f"{p['id']}__category"] = p["fields"]["category"]   # the select's preselected option
+            continue   # a skill's name must come from the page itself (below), as a browser would send it
         for k, v in p["fields"].items():
             form[f"{p['id']}__{k}"] = ", ".join(v) if isinstance(v, list) else v
+    import re
+    # what a browser posts for the skills: the hidden fields rendered in the page (their name must be among them)
+    for name, value in re.findall(r"<input type='hidden' name='(p\d+__item)' value='([^']*)'>", page):
+        form[name] = value
+    assert f"{skill['id']}__item" in form
     form[f"{skill['id']}__level"] = "production"          # Python chosen; MySQL left on "leave out"
     form[f"{role['id']}__title"] = "Principal Backend Engineer"   # an edit made in the review
     code, _, loc = req(env, "POST", "/facts/save", form)
