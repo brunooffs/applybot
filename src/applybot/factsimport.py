@@ -261,9 +261,38 @@ def _all_skill_items(facts: dict) -> set[str]:
     return out
 
 
+_COMPANY_SUFFIX = re.compile(r"\b(b\.?v\.?|n\.?v\.?|ltd\.?|lda\.?|gmbh|inc\.?|llc|s\.?a\.?)\s*$")
+
+
+def _emp_key(name: str) -> str:
+    """Employer name as people write it differently: 'Netwerven B.V. / Endouble (acquired ...)' = 'Netwerven'."""
+    n = _norm(re.sub(r"\(.*?\)", " ", name or ""))
+    n = n.split(" / ")[0].strip(" ,.-")
+    return _COMPANY_SUFFIX.sub("", n).strip(" ,.-")
+
+
+def _years(dates: str) -> tuple:
+    """('2022', '2025') from '2022 to 2025', '2022–2025' or 'May 2025 to present'; 'present' -> 'now'."""
+    d = _norm(dates)
+    ys = re.findall(r"\b(?:19|20)\d\d\b", d)
+    if not ys:
+        return ()
+    end = "now" if re.search(r"present|current|now", d) else ys[-1]
+    return (ys[0], end)
+
+
+def _same_role(r: dict, f: dict) -> bool:
+    """Same job: same years when both have them (titles differ between CV versions), else same title."""
+    a, b = _years(str(r.get("dates", ""))), _years(f.get("dates", ""))
+    if a and b:
+        return a == b
+    return _norm(str(r.get("title", ""))) == _norm(f["title"]) and _norm(str(r.get("dates", ""))) == _norm(f.get("dates", ""))
+
+
 def _find_employer(facts: dict, name: str):
+    key = _emp_key(name)
     for e in ((facts.get("experience") or {}).get("employers") or []):
-        if isinstance(e, dict) and _norm(str(e.get("name", ""))) == _norm(name):
+        if isinstance(e, dict) and key and _emp_key(str(e.get("name", ""))) == key:
             return e
     return None
 
@@ -282,9 +311,7 @@ def mark_existing(facts: dict, proposals: list[dict]) -> None:
             ex = not _unset((facts.get("experience") or {}).get("total"))
         elif k == "role":
             e = _find_employer(facts, f["employer"])
-            ex = bool(e) and any(_norm(str(r.get("title", ""))) == _norm(f["title"]) and
-                                 _norm(str(r.get("dates", ""))) == _norm(f["dates"])
-                                 for r in e.get("roles") or [] if isinstance(r, dict))
+            ex = bool(e) and any(_same_role(r, f) for r in e.get("roles") or [] if isinstance(r, dict))
         elif k == "skill":
             ex = _norm(f["item"]) in skills
         elif k == "certification":
@@ -332,8 +359,7 @@ def merge_data(old: dict, items: list[dict]) -> dict:
                 emps.append({"name": f["employer"], "roles": [role]})
             else:
                 roles = e.setdefault("roles", [])
-                if not any(_norm(str(r.get("title", ""))) == _norm(f["title"]) and
-                           _norm(str(r.get("dates", ""))) == _norm(f["dates"]) for r in roles if isinstance(r, dict)):
+                if not any(_same_role(r, f) for r in roles if isinstance(r, dict)):
                     roles.append(role)
         elif k == "skill":
             if not f.get("level") or f["level"] not in LEVELS or _norm(f["item"]) in _all_skill_items(d):
@@ -545,7 +571,7 @@ def _write_role(lines: list[str], f: dict) -> None:
     starts = [i for i in range(e_idx + 1, e_end) if re.match(r"^ {%d}- " % ci, lines[i])]
     for n, s in enumerate(starts):
         m = pat.match(lines[s])
-        if m and _norm(m.group(1).strip("'\"")) == _norm(f["employer"]):
+        if m and _emp_key(m.group(1).strip("'\"")) == _emp_key(f["employer"]):
             stop = starts[n + 1] if n + 1 < len(starts) else e_end
             r_idx = _find_key(lines, "roles", s, stop, ci + 2)
             if r_idx is None:
