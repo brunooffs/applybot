@@ -52,10 +52,10 @@ def test_packaged_defaults_are_complete():
         assert (DEFAULTS / f).exists(), f
 
 
-TIERS = [{"min_gb": 0, "model": None}, {"min_gb": 8, "model": "a"}, {"min_gb": 16, "model": "b"}, {"min_gb": 32, "model": "c"}]
+TIERS = [{"min_gb": 0, "model": None}, {"min_gb": 8, "model": "a"}, {"min_gb": 16, "model": "b"}, {"min_gb": 48, "model": "c"}]
 
 
-@pytest.mark.parametrize("gb,model", [(4, None), (8, "a"), (15.9, "a"), (16, "b"), (36, "c")])
+@pytest.mark.parametrize("gb,model", [(4, None), (8, "a"), (15.9, "a"), (16, "b"), (32, "b"), (48, "c")])
 def test_recommend_picks_highest_tier_that_fits(gb, model):
     assert doctor.recommend(gb, TIERS)["model"] == model
 
