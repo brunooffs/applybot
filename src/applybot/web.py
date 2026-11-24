@@ -114,7 +114,7 @@ ins{background:rgba(46,160,67,.2);text-decoration:none}del{background:rgba(220,5
 details{margin:10px 0}summary{cursor:pointer;color:var(--mut)}ul{margin:6px 0;padding-left:20px}.issue{color:var(--bad)}
 """
 
-NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("review", "/queue", "Review"),
+NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("postings", "/postings", "Postings"), ("review", "/queue", "Review"),
        ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("facts", "/facts", "Facts"), ("profile", "/profile", "Profile"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
        ("settings", "/settings", "Models"))
 
@@ -134,6 +134,8 @@ def active_for(path: str, q: dict) -> str:
         return "run"
     if path == "/history":
         return "history"
+    if path == "/postings":
+        return "postings"
     if path in ("/inbox", "/message", "/reply"):
         return "inbox"
     if path in ("/queue", "/job", "/send"):
@@ -1076,7 +1078,7 @@ def page_run(ctx, q):
     warn = runner.anthropic_key_problem(cfg, {"score", "draft"})
     body = (
         "<h1>Run</h1><p class='sub'>The same steps as <code>applybot run</code>: fetch postings, score them, draft letters. "
-        "Nothing is approved or sent from here; drafts land in Review.</p>"
+        "Nothing is approved or sent from here; scored postings are listed under <a href='/postings'>Postings</a> and drafts land in Review.</p>"
         + (f"<div class='banner bad'>{esc(warn)}</div>" if warn else "")
         + f"<div class='card mut'>Waiting to be scored: <b>{pending}</b> · scored, no letter yet: <b>{draftable}</b> · "
           f"Models: {esc(_models(cfg))}</div>"
@@ -1128,6 +1130,51 @@ def do_run_cancel(ctx, f):
 
 
 KIND_LABEL = {"draft": "first draft", "revision": "automatic revision", "edit": "edited by you", "sent": "sent to the recruiter"}
+
+
+POSTING_TABS = {
+    "scored": ("Scored", "Fetched postings the model has scored, best first. Open one to see why, and the letter if there is one."),
+    "waiting": ("Waiting to be scored", "Passed the title filter, not scored yet. Run the Score step on the Run page."),
+    "filtered": ("Filtered out", "Dropped by the title filter before any model was used, with the reason."),
+}
+
+
+def page_postings(ctx, q):
+    conn = ctx["conn"]
+    tab = q.get("tab", "scored")
+    if tab not in POSTING_TABS:
+        tab = "scored"
+    name, blurb = POSTING_TABS[tab]
+    counts = {r["k"]: r["c"] for r in conn.execute("SELECT status k, COUNT(*) c FROM jobs GROUP BY status")}
+    n = {"scored": counts.get("scored", 0), "waiting": counts.get("new", 0), "filtered": counts.get("filtered", 0)}
+    tabs = "".join(f'<a class="{"on" if t == tab else ""}" href="{link("/postings", tab=t)}">{POSTING_TABS[t][0]} ({n[t]})</a>'
+                   for t in POSTING_TABS)
+    cap = 200
+    if tab == "scored":
+        rows = conn.execute(
+            """SELECT j.id, j.company, j.title, j.location, s.overall, s.decision, s.family, s.cv_id, a.status AS app
+               FROM jobs j JOIN scores s ON s.job_id=j.id LEFT JOIN applications a ON a.job_id=j.id
+               WHERE j.status='scored' ORDER BY s.overall DESC, j.fetched_at DESC LIMIT ?""", (cap,)).fetchall()
+        trs = "".join(
+            f'<tr><td class="n">{r["overall"] if r["overall"] is not None else "-"}</td><td>{badge(r["decision"])}</td>'
+            f'<td>{esc(r["company"] or "")}</td><td><a href="{link("/job", id=r["id"])}">{esc(r["title"] or "")}</a></td>'
+            f'<td class="mut">{esc(r["location"] or "")}</td><td class="mut">{esc(r["family"] or "-")}</td>'
+            f'<td>{badge(r["app"]) if r["app"] else "<span class=mut>no letter yet</span>"}</td></tr>' for r in rows)
+        head = "<tr><th>Score</th><th>Decision</th><th>Company</th><th>Role</th><th>Location</th><th>Family</th><th>Letter</th></tr>"
+    else:
+        status = "new" if tab == "waiting" else "filtered"
+        rows = conn.execute(
+            """SELECT id, company, title, location, filter_reason FROM jobs WHERE status=?
+               ORDER BY fetched_at DESC LIMIT ?""", (status, cap)).fetchall()
+        extra = tab == "filtered"
+        trs = "".join(
+            f'<tr><td>{esc(r["company"] or "")}</td><td><a href="{link("/job", id=r["id"])}">{esc(r["title"] or "")}</a></td>'
+            f'<td class="mut">{esc(r["location"] or "")}</td>' + (f'<td class="mut">{esc(r["filter_reason"] or "")}</td>' if extra else "") + "</tr>"
+            for r in rows)
+        head = "<tr><th>Company</th><th>Role</th><th>Location</th>" + ("<th>Why</th>" if extra else "") + "</tr>"
+    table = (f"<table>{head}{trs}</table>" if rows else "<div class='card mut'>Nothing here.</div>")
+    more = f"<p class='mut'>Showing the first {cap} of {n[tab]}.</p>" if n[tab] > cap else ""
+    return "Postings", f"<h1>Postings</h1><p class='sub'>{esc(blurb)}</p><div class='tabs'>{tabs}</div>{table}{more}"
 
 
 def page_history(ctx, q):
@@ -1338,7 +1385,7 @@ def do_replies_check(ctx, f):
 
 
 GET_ROUTES = {"/": lambda c, q: page_overview(c), "/try": page_try_view, "/queue": page_queue, "/job": page_job,
-              "/send": page_send, "/facts": page_facts, "/profile": page_profile, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
+              "/send": page_send, "/facts": page_facts, "/profile": page_profile, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/postings": page_postings, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
 POST_ROUTES = {"/try/save": do_try_save, "/job/action": do_job_action, "/send": do_send, "/message/save": do_message_save,
                "/reply": do_reply_send, "/replies/check": do_replies_check, "/settings/save": do_settings_save,
                "/profile/upload": do_profile_upload, "/profile/save": do_profile_save, "/profile/discard": do_profile_discard,
