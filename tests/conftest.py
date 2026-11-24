@@ -14,7 +14,7 @@ _HOME = Path(tempfile.mkdtemp(prefix="applybot-test-home-"))
 for _f in (_DEFAULTS / "config").iterdir():
     _dst = _f.name[:-len(".example")] if _f.name.endswith(".example") else _f.name
     shutil.copy(_f, _HOME / "config" / _dst)
-shutil.copy(_DEFAULTS / "cvs" / "cvs.yaml.example", _HOME / "cvs" / "cvs.yaml")
+shutil.copy(Path(__file__).parent / "fixtures" / "cvs.yaml", _HOME / "cvs" / "cvs.yaml")
 os.environ["APPLYBOT_HOME"] = str(_HOME)
 
 from applybot.config import load_config  # noqa: E402
