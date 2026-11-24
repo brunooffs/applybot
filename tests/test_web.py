@@ -703,3 +703,25 @@ def test_overview_panels_escape_the_files(env):
     (env.home / "config" / "facts.yaml").write_text("name: <script>alert(1)</script>\n")
     page = req(env, "GET", "/")[1]
     assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
+
+
+def test_postings_page_lists_scored_waiting_and_filtered(env):
+    from applybot import db
+    from applybot.models import Job
+    from applybot.scoring import Verdict
+    conn = env.conn()
+    mk = lambda i, t: Job(source="gh", ext_id=i, company="Acme", title=t, url="https://x.test/" + i, location="Lisbon")   # noqa: E731
+    for i, t, sc in (("1", "Staff Engineer", 55.0), ("2", "Senior Recruiter", 91.0)):
+        db.upsert_job(conn, mk(i, t))
+        db.save_score(conn, f"gh:{i}", Verdict(family="F", cv_id=None, overall=sc, decision="human"), {})
+    db.upsert_job(conn, mk("3", "Talent Partner"))
+    db.upsert_job(conn, mk("4", "Junior <b>Intern</b>"), status="filtered", reason="title has 'intern'")
+    page = req(env, "GET", "/postings")[1]
+    assert "Scored (2)" in page and "Waiting to be scored (1)" in page and "Filtered out (1)" in page
+    assert page.index("Senior Recruiter") < page.index("Staff Engineer") and "no letter yet" in page   # best first
+    assert "Talent Partner" in req(env, "GET", "/postings?tab=waiting")[1]
+    f = req(env, "GET", "/postings?tab=filtered")[1]
+    assert "title has &#x27;intern&#x27;" in f or "title has 'intern'" in f
+    assert "<b>Intern</b>" not in f
+    assert 'href="/job?id=gh%3A2"' in page and req(env, "GET", "/job?id=gh%3A2")[0] == 200   # a posting without a letter opens
+    assert req(env, "GET", "/postings?tab=nonsense")[0] == 200
