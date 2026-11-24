@@ -683,3 +683,22 @@ def test_facts_save_without_import_or_selection(env):
     factsimport.discard_state(load_config(env.home))
     _, _, loc = req(env, "POST", "/facts/save", {})
     assert "err=" in loc
+
+
+def test_overview_shows_the_three_files_in_collapsed_panels(env):
+    page = req(env, "GET", "/")[1]
+    assert page.count("<details class='card'>") == 3
+    for label in ("Criteria", "Facts", "Profile"):
+        assert f"<b>{label}</b>" in page
+    assert "weights:" in page and "Alex Example" in page and "include_title_keywords" in page
+    assert "<pre" in page and " open" not in page.split("Your files")[1][:400]            # collapsed by default
+    (env.home / "config" / "profile.yaml").unlink()
+    (env.home / "config" / "criteria.yaml").unlink()
+    page = req(env, "GET", "/")[1]
+    assert "Not created yet." in page and "packaged default is in use" in page
+
+
+def test_overview_panels_escape_the_files(env):
+    (env.home / "config" / "facts.yaml").write_text("name: <script>alert(1)</script>\n")
+    page = req(env, "GET", "/")[1]
+    assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
