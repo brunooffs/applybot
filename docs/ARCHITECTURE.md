@@ -214,3 +214,22 @@ model extracts, plain code checks, the person decides.
 5. `merge_text` inserts the confirmed items into `facts.yaml` line by line, so comments and hand-written content survive.
    `merge_data` computes the same merge on parsed data; if the two disagree nothing is written. The old file is kept as `facts.yaml.bak`.
 6. While `facts.yaml` is still the fictional example, the import starts from a blank skeleton instead of adding to it.
+
+## Profile import (`profileimport.py`, dashboard "Profile" page)
+
+`profile.yaml`, the family list in `cvs/cvs.yaml` and the title keywords in `criteria.yaml` can be started from a
+CV and, optionally, a cover letter or profile text. Same rule: the model proposes, plain code checks, the person decides.
+
+1. Both documents are read locally and joined; the second one is marked as such. It may inform positioning, target
+   roles and preferences, never employment facts.
+2. The `extract` stage proposes headline, seniority, job families, capabilities, positioning and any stated preference,
+   each with the line it came from. A proposal is dropped unless that line occurs in the text, any number in it occurs
+   there as a number of its own, and (for name, years, base, languages) the value itself occurs.
+3. What a text cannot tell is asked, never guessed: home country (must be a country `eligibility.py` knows), other
+   authorised regions, relocation, working mode, employment types, availability.
+4. Titles the text itself uses start as primary families; the rest start left out.
+5. Writing: `profile.yaml` is replaced only while it is still the fictional example (old kept as `.bak`); a real profile
+   is never touched, the result goes to `profile.suggested.yaml`. The starter CV list (one CV `general`) gets the
+   families, and the uploaded PDF becomes its CV file if none exists; a CV list you edited is left alone and the
+   uncovered families are reported. New title keywords are appended to `criteria.yaml`, nothing is removed.
+   Every file is parsed again and must equal what was confirmed, or nothing is written.

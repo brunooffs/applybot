@@ -63,7 +63,9 @@ Then:
    what the model proposes, or edit the file by hand. Either way, resolve every `TODO` and `CONFIRM`. This file
    is the only thing letters may draw from.
 2. Describe yourself and your target roles in `config/profile.yaml`
-   (including `work_eligibility`, where you can work without a visa).
+   (including `work_eligibility`, where you can work without a visa). The dashboard's **Profile** page can start it
+   from your CV and, if you like, a cover letter: it proposes a headline, job families and capabilities, asks you where
+   you may work and what you want, and fills in your CV list and job-title keywords. Nothing is written until you save.
 3. Put your CVs in `cvs/` (names in `cvs/cvs.yaml`). `applybot cvs` shows what
    is missing and which job families have no CV.
 4. Pick the models in `config/settings.yaml`, or on the dashboard's Models page: `ollama`

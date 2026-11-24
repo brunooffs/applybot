@@ -26,7 +26,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from . import actions, db, factsimport, history, replies, runner, scoring, trial
+from . import actions, db, factsimport, history, profileimport, replies, runner, scoring, trial
 from .config import load_config
 from .llm import LLM
 from .models import Job
@@ -35,7 +35,8 @@ from .scoring import effective_status
 esc = html.escape
 SEND_LOCK = threading.Lock()     # one send at a time: a double click cannot send twice
 MAX_BODY = 1_000_000
-MAX_UPLOAD = 12_000_000   # a CV upload (/facts/upload only)
+MAX_UPLOAD = 24_000_000   # CV uploads (the two upload paths below only)
+UPLOAD_PATHS = ("/facts/upload", "/profile/upload")
 
 # Results of "try", kept in memory so you can come back to one, and save it to the review queue.
 # Lost when the server stops; the review queue itself is in the database.
@@ -114,7 +115,7 @@ details{margin:10px 0}summary{cursor:pointer;color:var(--mut)}ul{margin:6px 0;pa
 """
 
 NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("review", "/queue", "Review"),
-       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("facts", "/facts", "Facts"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
+       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("facts", "/facts", "Facts"), ("profile", "/profile", "Profile"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
        ("settings", "/settings", "Models"))
 
 
@@ -127,6 +128,8 @@ def active_for(path: str, q: dict) -> str:
         return "sources"
     if path in ("/facts", "/facts/upload", "/facts/save", "/facts/discard"):
         return "facts"
+    if path in ("/profile", "/profile/upload", "/profile/save", "/profile/discard"):
+        return "profile"
     if path in ("/run", "/run/start", "/run/cancel"):
         return "run"
     if path == "/history":
@@ -502,7 +505,7 @@ STAGE_HELP = {
     "revise": "Rewrites a letter after the fact-check flagged claims.",
     "verify": "The fact-check that stops invented claims. Worth a strong model.",
     "reply": "Classifies recruiter replies and drafts answers.",
-    "extract": "Reads your CV on the Facts page and proposes facts. Ollama keeps the CV on this machine; Anthropic is better at it.",
+    "extract": "Reads your CV on the Facts and Profile pages and proposes facts and a profile. Ollama keeps the CV on this machine; Anthropic is better at it.",
 }
 
 
@@ -709,6 +712,200 @@ def do_facts_save(ctx, f):
 def do_facts_discard(ctx, f):
     factsimport.discard_state(ctx["cfg"])
     raise Redirect(link("/facts", ok="Import discarded."))
+
+
+# --- profile from a CV ------------------------------------------------------------------------
+
+TIER_LABEL = (("", "— leave out —"), ("primary", "primary"), ("secondary", "secondary"),
+              ("selective", "always review"))
+
+
+def _checks(name: str, options, chosen) -> str:
+    return " ".join(f"<label style='display:inline-flex;gap:4px;align-items:center;margin-right:12px'>"
+                    f"<input type='checkbox' name='{name}' value='{esc(o)}'{' checked' if o in chosen else ''}> {esc(o)}</label>"
+                    for o in options)
+
+
+def _first(props: list, kind: str, field: str = "") -> dict | None:
+    return next((p for p in props if p["kind"] == kind and (not field or p["field"] == field)), None)
+
+
+def _src(p: dict | None) -> str:
+    return f"<div class='mut' style='font-size:12.5px'>From your text: “{esc(p['quote'])}”</div>" if p else ""
+
+
+def page_profile(ctx, q):
+    cfg, tok = ctx["cfg"], ctx["tok"]
+    llm = cfg.settings.get("llm", {})
+    prov = (llm.get("stages") or {}).get("extract") or llm.get("provider", "ollama")
+    model = (llm.get(prov) or {}).get("model", "?")
+    job, state = profileimport.CURRENT, profileimport.load_state(cfg)
+    starter = profileimport.is_starter_profile(cfg.profile)
+    where = ("Your text is sent to the Anthropic API to be read." if prov == "anthropic"
+             else "Your text is read by Ollama on this computer and goes nowhere else.")
+    warn = runner.anthropic_key_problem(cfg, {"extract"})
+    body = ("<h1>Profile</h1><p class='sub'>Build your <code>profile.yaml</code>, your CV list and your job-title keywords from a CV "
+            "and, if you like, a cover letter. The model only proposes; nothing is written until you review it and press Save.</p>")
+    if warn:
+        body += f"<div class='banner bad'>{esc(warn)}</div>"
+    body += ("<div class='banner'>Your profile.yaml is still the fictional example (Alex Example). Saving replaces it; the example "
+             "is kept as <code>profile.yaml.bak</code>.</div>" if starter else
+             "<div class='banner'>You already have a profile. Saving writes <code>config/profile.suggested.yaml</code> next to it "
+             "and does not change your <code>profile.yaml</code>.</div>")
+    running = profileimport.is_running()
+    if job and job.state == "running":
+        body += f"<!--refresh--><div class='card'><span class='badge'>Working</span> {esc(job.message)}</div>"
+    elif job and job.state == "failed":
+        body += f"<div class='banner bad'>Could not read the text: {esc(job.message)}</div>"
+    body += ("<div class='card'><form method='post' action='/profile/upload' enctype='multipart/form-data' data-busy>"
+             f"{hidden(tok)}<label>Your CV</label><input type='file' name='cv' accept='.pdf,.docx,.txt,.md'>"
+             "<label>A cover letter or profile text (optional)</label><input type='file' name='extra' accept='.pdf,.docx,.txt,.md'>"
+             "<p class='mut'>The optional document is used only for your positioning, target roles and preferences, "
+             "never as proof of what you did. A letter written for one job leans towards that job, so check what it suggests.</p>"
+             f"<p class='mut'>Read by <b>{esc(prov)}</b> ({esc(model)}). {where} Change this on the Models page (stage <code>extract</code>).</p>"
+             f"<button class='pri'{' disabled' if running else ''}>Read my documents</button> <span class='busy mut' hidden>Uploading…</span></form></div>")
+    if state:
+        body += _profile_review(cfg, tok, state)
+    return "Profile", body
+
+
+def _profile_review(cfg, tok: str, state: dict) -> str:
+    props = state.get("proposals") or []
+    hint = profileimport.facts_hint(cfg.facts)
+    one = lambda kind, field="": (_first(props, kind, field) or {}).get("value", "")   # noqa: E731
+    out = f"<h2>Review: {esc(state.get('filename', 'CV'))}" + (f" + {esc(state['extra'])}" if state.get("extra") else "") + "</h2>"
+    if state.get("dropped"):
+        out += f"<p class='mut'>{int(state['dropped'])} suggestion(s) were discarded because their source line was not in your text.</p>"
+    text = lambda name, label, val, ph="": (f"<label>{label}</label><input type='text' name='f__{name}' value='{esc(val)}'"   # noqa: E731
+                                            f"{(' placeholder=' + chr(39) + esc(ph) + chr(39)) if ph else ''}>")
+    f = f"<form method='post' action='/profile/save'>{hidden(tok)}"
+    f += "<h3>About you</h3><div class='card'>"
+    f += text("name", "Name", one("name") or hint.get("name", "")) + _src(_first(props, "name"))
+    f += text("headline", "Headline", one("headline")) + _src(_first(props, "headline"))
+    f += text("seniority", "Seniority", one("seniority")) + _src(_first(props, "seniority"))
+    f += text("experience_years", "Years of experience", one("experience_years")) + _src(_first(props, "experience_years"))
+    f += text("home_base", "Based in", one("home_base") or hint.get("location", "")) + _src(_first(props, "home_base"))
+    langs = [p["value"] for p in props if p["kind"] == "language"] or hint.get("languages", [])
+    f += text("languages", "Languages (comma separated)", ", ".join(langs))
+    f += "</div><h3>Where you can work</h3><div class='card'>"
+    f += ("<p class='mut'>This is never guessed. It decides which postings are rejected because of where they are. "
+          "A posting limited to somewhere you are not authorised goes to review or is rejected.</p>")
+    f += text("home_country", "Home country", profileimport.guess_country(one("home_base") or hint.get("location", "")),
+              "the country only, for example Portugal")
+    f += "<label>Also authorised to work in</label>" + _checks("f__regions", profileimport.REGIONS, [])
+    f += "<p><label style='display:flex;gap:6px;align-items:center'><input type='checkbox' name='f__relocation' value='1'> I would relocate</label></p>"
+    reloc = _first(props, "preference", "relocation")
+    f += _src(reloc)
+    f += "</div><h3>What you want</h3><div class='card'>"
+    modes = [m for m in profileimport.MODES if m in one("preference", "working_mode").lower()] or ["remote", "hybrid"]
+    types = [t for t in profileimport.TYPES if t in one("preference", "employment_types").lower()] or ["permanent", "contract"]
+    f += "<label>Working mode</label>" + _checks("f__mode", profileimport.MODES, modes) + _src(_first(props, "preference", "working_mode"))
+    f += "<label>Employment types</label>" + _checks("f__type", profileimport.TYPES, types) + _src(_first(props, "preference", "employment_types"))
+    f += text("availability", "Availability", one("preference", "availability"), "for example Immediately") + _src(_first(props, "preference", "availability"))
+    f += text("geography", "Where you look", "", "for example Remote within Europe")
+    f += "</div><h3>Job families</h3>"
+    f += ("<p class='mut'>The titles you want to be matched with. <b>primary</b> and <b>secondary</b> are matched normally; "
+          "<b>always review</b> sends every match to you, with the reason you give. Titles your text itself uses start as primary; "
+          "the rest start left out. Every family you keep is given your CV.</p>")
+    for p in (x for x in props if x["kind"] == "family"):
+        sel = "".join(f"<option value='{v}'{' selected' if v == p.get('tier', '') else ''}>{lab}</option>" for v, lab in TIER_LABEL)
+        f += (f"<div class='card'><div class='row'><input type='text' name='{_p(p['id'], 'value')}' value='{esc(p['value'])}'>"
+              f"<select name='{_p(p['id'], 'tier')}'>{sel}</select>"
+              f"<input type='text' name='{_p(p['id'], 'reason')}' placeholder='why it is always reviewed'></div>"
+              f"<div class='mut' style='font-size:12.5px'>From your text: “{esc(p['quote'])}”</div></div>")
+    f += "<h3>How you are described</h3><div class='card'>"
+    pos = _first(props, "positioning")
+    f += (f"<label>Positioning</label><textarea name='f__positioning' rows='4'>{esc(pos['value'] if pos else '')}</textarea>" + _src(pos))
+    f += "<label>Capabilities (untick what you don't want)</label>"
+    for p in (x for x in props if x["kind"] == "capability"):
+        f += (f"<div class='row'><input type='checkbox' name='{_p(p['id'], 'keep')}' value='1' checked>"
+              f"<input type='text' name='{_p(p['id'], 'value')}' value='{esc(p['value'])}'></div>")
+    f += "</div><h3>Job-title keywords</h3><div class='card'>"
+    f += ("<p class='mut'>A cheap filter before any model call: a posting whose title contains none of the keywords is skipped. "
+          "These are <b>added</b> to your criteria.yaml list; nothing there is removed. One per line.</p>")
+    f += f"<textarea name='f__keywords' rows='6'>{esc(chr(10).join(state.get('keywords') or []))}</textarea></div>"
+    f += ("<p><button class='pri'>Save profile</button> <span class='mut'>Your CV list and keywords are updated too; "
+          "a backup of any file replaced is kept as .bak.</span></p></form>")
+    f += (f"<form method='post' action='/profile/discard' style='margin-top:14px'>{hidden(tok)}"
+          "<button class='danger'>Discard this import</button></form>")
+    return out + f
+
+
+def do_profile_upload(ctx, f):
+    cfg = ctx["cfg"]
+    problem = runner.anthropic_key_problem(cfg, {"extract"})
+    if problem:
+        raise Redirect(link("/profile", err=problem))
+    files = f.get("_files") or {}
+    name, data = files.get("cv", ("", b""))
+    if not name or not data:
+        raise Redirect(link("/profile", err="Choose your CV first."))
+    xname, xdata = files.get("extra", ("", b""))
+    try:
+        text = factsimport.read_document(name, data)
+        extra = factsimport.read_document(xname, xdata) if xname and xdata else ""
+        if name.lower().endswith(".pdf"):    # kept so it can become the CV file the applications attach
+            cp = profileimport.cv_copy_path(cfg)
+            cp.parent.mkdir(parents=True, exist_ok=True)
+            cp.write_bytes(data)
+        profileimport.start(cfg.root, make_llm, name, profileimport.combine(text, extra), xname if extra else "")
+    except factsimport.ImportProblem as e:
+        raise Redirect(link("/profile", err=str(e)))
+    raise Redirect(link("/profile", ok="Reading your documents. This page refreshes while it works."))
+
+
+def do_profile_save(ctx, f):
+    cfg = ctx["cfg"]
+    state = profileimport.load_state(cfg)
+    if not state:
+        raise Redirect(link("/profile", err="There is no pending import."))
+    multi = f.get("_multi") or {}
+    got = lambda name: f.get(f"f__{name}", "").strip()   # noqa: E731
+    fams: dict = {"primary": [], "secondary": [], "selective": {}}
+    caps = []
+    for p in state["proposals"]:
+        val = f.get(_p(p["id"], "value"), "").strip()
+        if p["kind"] == "family":
+            tier, title = f.get(_p(p["id"], "tier"), ""), factsimport._clean_str(val)
+            if tier == "selective" and title:
+                fams["selective"][title] = f.get(_p(p["id"], "reason"), "").strip()
+            elif tier in ("primary", "secondary") and title and title not in fams["primary"] + fams["secondary"]:
+                fams[tier].append(title)
+        elif p["kind"] == "capability" and f.get(_p(p["id"], "keep")) and val:
+            caps.append(val)
+    answers = {
+        "name": got("name"), "headline": got("headline"), "seniority": got("seniority"),
+        "experience_years": got("experience_years"), "home_base": got("home_base"),
+        "home_country": got("home_country"), "authorised_regions": multi.get("f__regions", []),
+        "accepts_relocation": bool(f.get("f__relocation")), "languages": factsimport._clean_list(got("languages")),
+        "positioning": got("positioning"), "families": fams, "capabilities": caps,
+        "working_mode": multi.get("f__mode", []), "employment_types": multi.get("f__type", []),
+        "availability": got("availability"), "geography": got("geography"),
+    }
+    try:
+        profile = profileimport.build_profile(answers)
+        target = profileimport.apply_profile(cfg, profile)
+        families = fams["primary"] + fams["secondary"] + list(fams["selective"])
+        cvs = profileimport.apply_cvs(load_config(cfg.root), families, profileimport.cv_copy_path(cfg))
+        added = profileimport.apply_keywords(cfg, got("keywords"))
+    except factsimport.ImportProblem as e:
+        raise Redirect(link("/profile", err=str(e)))
+    profileimport.discard_state(cfg)
+    msg = f"Saved your profile to {target}."
+    if cvs["updated"]:
+        msg += " Your CV list now covers every family" + (" and your CV was copied to cvs/." if cvs["copied"] else
+                                                          "; put your CV PDF in cvs/ under the name it lists.")
+    elif cvs["unmapped"]:
+        msg += (" These families have no CV in cvs/cvs.yaml yet and will go to review until you add them: "
+                + ", ".join(cvs["unmapped"]) + ".")
+    if added:
+        msg += f" Added {added} title keyword(s) to criteria.yaml."
+    raise Redirect(link("/profile", ok=msg + " Open the file to resolve any TODO lines (`applybot doctor` lists them)."))
+
+
+def do_profile_discard(ctx, f):
+    profileimport.discard_state(ctx["cfg"])
+    raise Redirect(link("/profile", ok="Import discarded."))
 
 
 def parse_multipart(ctype: str, raw: bytes) -> dict:
@@ -1084,9 +1281,10 @@ def do_replies_check(ctx, f):
 
 
 GET_ROUTES = {"/": lambda c, q: page_overview(c), "/try": page_try_view, "/queue": page_queue, "/job": page_job,
-              "/send": page_send, "/facts": page_facts, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
+              "/send": page_send, "/facts": page_facts, "/profile": page_profile, "/sources": page_sources, "/run": page_run, "/settings": page_settings, "/history": page_history, "/inbox": page_inbox, "/message": page_message, "/reply": page_reply_confirm}
 POST_ROUTES = {"/try/save": do_try_save, "/job/action": do_job_action, "/send": do_send, "/message/save": do_message_save,
                "/reply": do_reply_send, "/replies/check": do_replies_check, "/settings/save": do_settings_save,
+               "/profile/upload": do_profile_upload, "/profile/save": do_profile_save, "/profile/discard": do_profile_discard,
                "/facts/upload": do_facts_upload, "/facts/save": do_facts_save, "/facts/discard": do_facts_discard,
                "/sources/save": do_sources_save, "/sources/check": do_sources_check, "/run/start": do_run_start,
                "/run/cancel": do_run_cancel}
@@ -1173,11 +1371,11 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = -1
-        if not 0 <= length <= (MAX_UPLOAD if u.path == "/facts/upload" else MAX_BODY):
+        if not 0 <= length <= (MAX_UPLOAD if u.path in UPLOAD_PATHS else MAX_BODY):
             return self._send(413, "Request too large.")
         raw = self.rfile.read(length)
         ctype = self.headers.get("Content-Type", "")
-        if u.path == "/facts/upload" and ctype.startswith("multipart/form-data"):
+        if u.path in UPLOAD_PATHS and ctype.startswith("multipart/form-data"):
             f = parse_multipart(ctype, raw)
         else:
             multi = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)

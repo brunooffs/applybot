@@ -36,8 +36,8 @@ def cmd_init(args):
         elif src.exists():
             shutil.copy(src, dst)
             print(f"created  {rel}" + ("  <- edit this with YOUR details" if rel in _PERSONAL else ""))
-    print("Next: fill in config/facts.yaml and config/profile.yaml, put your CV files in cvs/, "
-          "then run `applybot doctor` to check the setup and `applybot serve --open` to start.")
+    print("Next: run `applybot serve --open` and use the Facts and Profile pages to build config/facts.yaml and "
+          "config/profile.yaml from your CV (or edit them by hand), put your CV in cvs/, then run `applybot doctor`.")
 
 
 def cmd_doctor(args):
