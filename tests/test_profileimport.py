@@ -133,29 +133,6 @@ def test_profile_is_written_only_over_the_fictional_example(tmp_path):
     assert (home / "config" / "profile.yaml").read_text() == mine
 
 
-def test_starter_cv_list_gets_the_families_and_the_uploaded_pdf(tmp_path):
-    home = make_home(tmp_path)
-    (home / "up.pdf").write_bytes(b"%PDF-1.4 x")
-    out = pi.apply_cvs(load_config(home), ["Senior Backend Engineer", "Engineering Manager"], home / "up.pdf")
-    assert out == {"updated": True, "unmapped": [], "copied": True}
-    cfg = load_config(home)
-    assert cfg.family_to_cv == {"Senior Backend Engineer": "general", "Engineering Manager": "general"}
-    assert (home / "cvs" / "my-cv.pdf").read_bytes() == b"%PDF-1.4 x"
-    # an existing file is never replaced by the uploaded one
-    (home / "cvs" / "my-cv.pdf").write_bytes(b"mine")
-    pi.apply_cvs(load_config(home), ["Senior Backend Engineer"], home / "up.pdf")
-    assert (home / "cvs" / "my-cv.pdf").read_bytes() == b"mine"
-
-
-def test_an_edited_cv_list_is_left_alone(tmp_path):
-    home = make_home(tmp_path)
-    (home / "cvs" / "cvs.yaml").write_text("cvs:\n  - id: a\n    file: a.pdf\n    families: [Platform Engineer]\n"
-                                           "  - id: b\n    file: b.pdf\n    families: [Scrum Master]\n")
-    out = pi.apply_cvs(load_config(home), ["Platform Engineer", "Backend Engineer"])
-    assert out == {"updated": False, "unmapped": ["Backend Engineer"], "copied": False}
-    assert "Backend" not in (home / "cvs" / "cvs.yaml").read_text()
-
-
 def crit(home):
     return yaml.safe_load((home / "config" / "criteria.yaml").read_text())
 
@@ -333,7 +310,8 @@ def test_profile_page_upload_review_and_save(env, monkeypatch):  # noqa: F811
     assert prof["families"]["primary"] == ["Senior Backend Engineer"]      # Platform Engineer started left out
     assert prof["preferences"]["working_mode"] == ["remote", "hybrid"] and prof["preferences"]["availability"] == "immediately"
     assert prof["languages"] == ["English"] and prof["capabilities"] == ["Event-driven systems"]
-    assert load_config(env.home).family_to_cv == {"Senior Backend Engineer": "general"}
+    assert load_config(env.home).family_to_cv == {"Senior Backend Engineer": "cv"}     # the uploaded cv.txt took over the starter entry
+    assert (env.home / "cvs" / "cv.txt").read_text() == CV and (env.home / "cvs" / "cover-letters" / "letter.txt").exists()
     kws = yaml.safe_load((env.home / "config" / "criteria.yaml").read_text())["prefilter"]["include_title_keywords"]
     assert kws == ["backend engineer", "backend"]     # the starter engineering list was replaced
     assert pi.load_state(load_config(env.home)) is None

@@ -26,7 +26,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from . import actions, db, factsimport, history, profileimport, replies, runner, scoring, trial
+from . import actions, cvstore, db, factsimport, history, profileimport, replies, runner, scoring, trial
 from .config import load_config
 from .llm import LLM
 from .models import Job
@@ -642,6 +642,8 @@ def page_facts(ctx, q):
     body += ("<div class='card'><form method='post' action='/facts/upload' enctype='multipart/form-data' data-busy>"
              f"{hidden(tok)}<label>Your CV</label><input type='file' name='cv' accept='.pdf,.docx,.txt,.md'>"
              f"<p class='mut'>Read by <b>{esc(prov)}</b> ({esc(model)}). {where} Change this on the Models page (stage <code>extract</code>).</p>"
+             "<p class='mut'>Your CV is also saved in your <code>cvs/</code> folder (a file with the same name is replaced) "
+             "and listed in <code>cvs.yaml</code>.</p>"
              f"<button class='pri'{' disabled' if running else ''}>Read my CV</button> <span class='busy mut' hidden>Uploading…</span></form></div>")
     if state:
         props = state.get("proposals") or []
@@ -682,10 +684,11 @@ def do_facts_upload(ctx, f):
         raise Redirect(link("/facts", err="Choose a file first."))
     try:
         text = factsimport.read_document(name, data)
+        stored = cvstore.store_cv(cfg.root, name, data)          # into cvs/ and cvs.yaml, replacing a same-named file
         factsimport.start(cfg.root, make_llm, name, text)
     except factsimport.ImportProblem as e:
         raise Redirect(link("/facts", err=str(e)))
-    raise Redirect(link("/facts", ok="Reading your CV. This page refreshes while it works."))
+    raise Redirect(link("/facts", ok=_stored_note(stored, False) + " Reading your CV. This page refreshes while it works."))
 
 
 def do_facts_save(ctx, f):
@@ -784,6 +787,8 @@ def page_profile(ctx, q):
              "<label>A cover letter or profile text (optional)</label><input type='file' name='extra' accept='.pdf,.docx,.txt,.md'>"
              "<p class='mut'>The optional document is used only for your positioning, target roles and preferences, "
              "never as proof of what you did. A letter written for one job leans towards that job, so check what it suggests.</p>"
+             "<p class='mut'>Both files are also saved in your <code>cvs/</code> folder (a file with the same name is replaced) "
+             "and your CV is listed in <code>cvs.yaml</code>.</p>"
              f"<p class='mut'>Read by <b>{esc(prov)}</b> ({esc(model)}). {where} Change this on the Models page (stage <code>extract</code>).</p>"
              f"<button class='pri'{' disabled' if running else ''}>Read my documents</button> <span class='busy mut' hidden>Uploading…</span></form></div>")
     if state:
@@ -881,14 +886,20 @@ def do_profile_upload(ctx, f):
     try:
         text = factsimport.read_document(name, data)
         extra = factsimport.read_document(xname, xdata) if xname and xdata else ""
-        if name.lower().endswith(".pdf"):    # kept so it can become the CV file the applications attach
-            cp = profileimport.cv_copy_path(cfg)
-            cp.parent.mkdir(parents=True, exist_ok=True)
-            cp.write_bytes(data)
-        profileimport.start(cfg.root, make_llm, name, profileimport.combine(text, extra), xname if extra else "")
+        stored = cvstore.store_cv(cfg.root, name, data)          # into cvs/ and cvs.yaml, replacing a same-named file
+        if extra:
+            cvstore.store_letter(cfg.root, xname, xdata)         # kept in cvs/cover-letters/ for later
+        profileimport.start(cfg.root, make_llm, name, profileimport.combine(text, extra), xname if extra else "",
+                            stored["file"])
     except factsimport.ImportProblem as e:
         raise Redirect(link("/profile", err=str(e)))
-    raise Redirect(link("/profile", ok="Reading your documents. This page refreshes while it works."))
+    raise Redirect(link("/profile", ok=_stored_note(stored, bool(extra)) + " Reading your documents. This page refreshes while it works."))
+
+
+def _stored_note(stored: dict, letter: bool) -> str:
+    note = (f"Your CV replaced cvs/{stored['file']}." if stored["replaced"] else f"Your CV was saved as cvs/{stored['file']}.")
+    note += " It is listed in cvs.yaml." if stored["added"] else ""
+    return note + (" Your cover letter was kept in cvs/cover-letters/." if letter else "")
 
 
 def do_profile_save(ctx, f):
@@ -921,20 +932,22 @@ def do_profile_save(ctx, f):
     }
     try:
         profile = profileimport.build_profile(answers)
+        starter = profileimport.is_starter_profile(cfg.profile)
         target = profileimport.apply_profile(cfg, profile)
         families = fams["primary"] + fams["secondary"] + list(fams["selective"])
-        cvs = profileimport.apply_cvs(load_config(cfg.root), families, profileimport.cv_copy_path(cfg))
+        cvs = (cvstore.set_families(cfg.root, state["cv_file"], families, exclusive=starter)
+               if state.get("cv_file") else None)
         crit = profileimport.apply_criteria(cfg, got("keywords"), f.get("f__exclude"))
     except factsimport.ImportProblem as e:
         raise Redirect(link("/profile", err=str(e)))
     profileimport.discard_state(cfg)
     msg = f"Saved your profile to {target}."
-    if cvs["updated"]:
-        msg += " Your CV list now covers every family" + (" and your CV was copied to cvs/." if cvs["copied"] else
-                                                          "; put your CV PDF in cvs/ under the name it lists.")
-    elif cvs["unmapped"]:
-        msg += (" These families have no CV in cvs/cvs.yaml yet and will go to review until you add them: "
-                + ", ".join(cvs["unmapped"]) + ".")
+    if cvs:
+        if cvs["added"]:
+            msg += f" {len(cvs['added'])} job famil{'y' if len(cvs['added']) == 1 else 'ies'} now use your CV in cvs.yaml."
+        if cvs["elsewhere"]:
+            msg += (" Already used by another CV, so left there: "
+                    + ", ".join(f"{f} ({c})" for f, c in cvs["elsewhere"].items()) + ".")
     if crit["mode"] == "replaced":
         msg += f" The starter title keywords in criteria.yaml were replaced by your {crit['added']}."
     elif crit["added"]:

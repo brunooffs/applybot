@@ -633,6 +633,7 @@ def test_facts_page_upload_review_and_save(env, monkeypatch):
     assert "Read my CV" in req(env, "GET", "/facts")[1]
     code, loc = upload_cv(env, "cv.txt", CV.encode())
     assert code == 303 and "ok=" in loc
+    assert (env.home / "cvs" / "cv.txt").read_text() == CV and "cv.txt" in (env.home / "cvs" / "cvs.yaml").read_text()
     assert wait_for_import().state == "done"
     page = req(env, "GET", "/facts")[1]
     assert "Initech Payments" in page and "From your CV" in page and "Kafka" not in page   # dropped one never shown

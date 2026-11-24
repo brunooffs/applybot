@@ -11,8 +11,8 @@ Same rule as the facts import: the model proposes, plain code checks, you decide
        config/profile.yaml   a fresh one while it is still the fictional example (old kept as .bak);
                              an existing real profile is never touched: the result goes to
                              config/profile.suggested.yaml to compare by hand
-       cvs/cvs.yaml          the starter list (one CV "general") gets your families; a list you
-                             edited is left alone and the families it does not cover are reported
+       cvs/cvs.yaml          the uploaded CV is already stored and listed (cvstore.py); it is given
+                             your families, except those that belong to another CV
        config/criteria.yaml  title keywords: the starter lists (written for a backend-engineering search)
                              are replaced; lists you edited only get new keywords appended
 Every file written is parsed again and must equal what was confirmed, or nothing is written.
@@ -299,30 +299,6 @@ def apply_profile(cfg, profile: dict) -> Path:
     return target
 
 
-# --- 4. the CV list -----------------------------------------------------------------------
-
-def apply_cvs(cfg, families: list[str], cv_pdf: Path | None = None) -> dict:
-    """Give the starter CV list the new families. Returns {'updated': bool, 'unmapped': [...], 'copied': bool}.
-    A CV list you edited is never changed: families it does not cover are reported instead."""
-    path = cfg.root / "cvs" / "cvs.yaml"
-    cvs = cfg.cvs
-    if len(cvs) == 1 and cvs[0].get("id") == "general":
-        header = path.read_text(encoding="utf-8").split("\ncvs:")[0] + "\n" if path.exists() else ""
-        entry = {"id": "general", "file": cvs[0].get("file") or "my-cv.pdf", "families": list(families)}
-        text = header + yaml.safe_dump({"cvs": [entry]}, allow_unicode=True, sort_keys=False, width=92)
-        if yaml.safe_load(text) != {"cvs": [entry]}:
-            raise ImportProblem("I could not write the CV list safely. Nothing was changed.")
-        _atomic(path, text)
-        copied = False
-        dest = cfg.root / "cvs" / entry["file"]
-        if cv_pdf and cv_pdf.exists() and not dest.exists():
-            dest.write_bytes(cv_pdf.read_bytes())
-            copied = True
-        return {"updated": True, "unmapped": [], "copied": copied}
-    mapped = {f for c in cvs for f in c.get("families", [])}
-    return {"updated": False, "unmapped": [f for f in families if f not in mapped], "copied": False}
-
-
 # --- 5. title keywords (criteria.yaml) ----------------------------------------------------
 
 _LISTS = ("include_title_keywords", "exclude_title_keywords")
@@ -441,10 +417,6 @@ def state_path(cfg) -> Path:
     return cfg.path("db").parent / "profile_import.json"
 
 
-def cv_copy_path(cfg) -> Path:
-    return cfg.path("db").parent / "profile_import_cv.pdf"
-
-
 def load_state(cfg) -> dict | None:
     try:
         p = state_path(cfg)
@@ -462,11 +434,10 @@ def save_state(cfg, state: dict) -> None:
 
 
 def discard_state(cfg) -> None:
-    for p in (state_path(cfg), cv_copy_path(cfg)):
-        try:
-            p.unlink()
-        except FileNotFoundError:
-            pass
+    try:
+        state_path(cfg).unlink()
+    except FileNotFoundError:
+        pass
 
 
 # --- 7. background job --------------------------------------------------------------------
@@ -480,17 +451,17 @@ def is_running() -> bool:
     return CURRENT is not None and CURRENT.state == "running"
 
 
-def start(home, make_llm, filename: str, text: str, extra_name: str = "") -> Job:
+def start(home, make_llm, filename: str, text: str, extra_name: str = "", cv_file: str = "") -> Job:
     global CURRENT
     with _LOCK:
         if is_running():
             raise ImportProblem("A CV is already being read. Wait for it to finish.")
         CURRENT = Job(filename)
-    threading.Thread(target=_work, args=(CURRENT, home, make_llm, text, extra_name), daemon=True).start()
+    threading.Thread(target=_work, args=(CURRENT, home, make_llm, text, extra_name, cv_file), daemon=True).start()
     return CURRENT
 
 
-def _work(job: Job, home, make_llm, text: str, extra_name: str) -> None:
+def _work(job: Job, home, make_llm, text: str, extra_name: str, cv_file: str) -> None:
     from .config import load_config
     from .llm import for_stage
     try:
@@ -501,7 +472,7 @@ def _work(job: Job, home, make_llm, text: str, extra_name: str) -> None:
             job.message = f"The model is reading (part {i + 1} of {n})…"
         proposals, dropped = extract(client, text, prog)
         fams = [p["value"] for p in proposals if p["kind"] == "family" and p.get("tier")]
-        save_state(cfg, {"filename": job.filename, "extra": extra_name, "created": time.time(), "dropped": dropped,
+        save_state(cfg, {"filename": job.filename, "cv_file": cv_file, "extra": extra_name, "created": time.time(), "dropped": dropped,
                          "proposals": proposals, "keywords": suggest_keywords(fams)})
         job.state, job.message = "done", f"Found {len(proposals)} suggestions."
     except Exception as e:
