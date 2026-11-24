@@ -231,5 +231,5 @@ CV and, optionally, a cover letter or profile text. Same rule: the model propose
 5. Writing: `profile.yaml` is replaced only while it is still the fictional example (old kept as `.bak`); a real profile
    is never touched, the result goes to `profile.suggested.yaml`. The starter CV list (one CV `general`) gets the
    families, and the uploaded PDF becomes its CV file if none exists; a CV list you edited is left alone and the
-   uncovered families are reported. New title keywords are appended to `criteria.yaml`, nothing is removed.
+   uncovered families are reported. While `criteria.yaml` still has the packaged starter lists (written for a backend-engineering search), both title lists are replaced, and skip words that clash with a wanted keyword (`recruiter`) are dropped. Once you have edited the lists, new keywords are only appended and clashes are reported, never edited.
    Every file is parsed again and must equal what was confirmed, or nothing is written.

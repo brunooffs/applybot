@@ -217,8 +217,30 @@ def page_overview(ctx):
         '<span class="busy mut" hidden>Working…</span></form></div>'
         f"<h2>Pipeline</h2><div class='card mut'>Jobs: {esc(json.dumps(st))}<br>Decisions: {esc(json.dumps(dec))}<br>"
         f"Models: {esc(_models(cfg))}<br>New postings arrive with <code>applybot run</code> in a terminal.</div>"
+        + _file_panels(cfg)
     )
     return "Overview", body
+
+
+def _file_panels(cfg) -> str:
+    """The three files that steer everything, read-only, collapsed. Raw text, comments included."""
+    from .config import DEFAULTS
+    out = ("<h2>Your files</h2><p class='mut'>What the bot is working from right now. Read-only here: edit the file, or "
+           "rebuild it from your CV on the Facts and Profile pages.</p>")
+    for label, rel in (("Criteria", "config/criteria.yaml"), ("Facts", "config/facts.yaml"), ("Profile", "config/profile.yaml")):
+        path = cfg.root / rel
+        note = ""
+        if not path.exists() and rel.endswith("criteria.yaml") and (DEFAULTS / rel).exists():
+            path, note = DEFAULTS / rel, " (you have no criteria.yaml of your own, so the packaged default is in use)"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = None
+        shown = (f"<pre style='max-height:460px;overflow:auto;margin:8px 0 0;white-space:pre-wrap'>{esc(text)}</pre>"
+                 if text is not None else "<p class='mut'>Not created yet.</p>")
+        out += (f"<details class='card'><summary><b>{label}</b> <span class='mut'>{esc(rel)}{esc(note)}</span></summary>"
+                f"{shown}</details>")
+    return out
 
 
 def _bar(value, cls: str = "", ticks=()) -> str:
@@ -825,10 +847,25 @@ def _profile_review(cfg, tok: str, state: dict) -> str:
     for p in (x for x in props if x["kind"] == "capability"):
         f += (f"<div class='row'><input type='checkbox' name='{_p(p['id'], 'keep')}' value='1' checked>"
               f"<input type='text' name='{_p(p['id'], 'value')}' value='{esc(p['value'])}'></div>")
+    kws = list(state.get("keywords") or [])
     f += "</div><h3>Job-title keywords</h3><div class='card'>"
-    f += ("<p class='mut'>A cheap filter before any model call: a posting whose title contains none of the keywords is skipped. "
-          "These are <b>added</b> to your criteria.yaml list; nothing there is removed. One per line.</p>")
-    f += f"<textarea name='f__keywords' rows='6'>{esc(chr(10).join(state.get('keywords') or []))}</textarea></div>"
+    if profileimport.criteria_is_starter(cfg):
+        skip = profileimport.starter_excludes(cfg)
+        clash = profileimport.conflicts(kws, skip)
+        f += ("<p class='mut'>A cheap filter before any model call. Your <code>criteria.yaml</code> still has the starter lists, "
+              "written for a backend-engineering search, so saving <b>replaces</b> them with the two lists below. "
+              "A posting is skipped if its title has none of the keywords, or has a skip word. One per line.</p>"
+              f"<label>Keywords a title must contain one of</label><textarea name='f__keywords' rows='6'>{esc(chr(10).join(kws))}</textarea>"
+              f"<label>Skip a posting whose title contains</label><textarea name='f__exclude' rows='5'>"
+              f"{esc(chr(10).join(e for e in skip if e not in clash))}</textarea>")
+        if clash:
+            f += ("<p class='mut'>Left out of the skip list because they match a keyword you want: "
+                  + esc(", ".join(clash)) + ".</p>")
+    else:
+        f += ("<p class='mut'>A cheap filter before any model call: a posting whose title contains none of the keywords is skipped. "
+              "These are <b>added</b> to your criteria.yaml list; nothing there is removed. One per line.</p>"
+              f"<textarea name='f__keywords' rows='6'>{esc(chr(10).join(kws))}</textarea>")
+    f += "</div>"
     f += ("<p><button class='pri'>Save profile</button> <span class='mut'>Your CV list and keywords are updated too; "
           "a backup of any file replaced is kept as .bak.</span></p></form>")
     f += (f"<form method='post' action='/profile/discard' style='margin-top:14px'>{hidden(tok)}"
@@ -900,7 +937,7 @@ def do_profile_save(ctx, f):
         families = fams["primary"] + fams["secondary"] + list(fams["selective"])
         cvs = (cvstore.set_families(cfg.root, state["cv_file"], families, exclusive=starter)
                if state.get("cv_file") else None)
-        added = profileimport.apply_keywords(cfg, got("keywords"))
+        crit = profileimport.apply_criteria(cfg, got("keywords"), f.get("f__exclude"))
     except factsimport.ImportProblem as e:
         raise Redirect(link("/profile", err=str(e)))
     profileimport.discard_state(cfg)
@@ -911,8 +948,15 @@ def do_profile_save(ctx, f):
         if cvs["elsewhere"]:
             msg += (" Already used by another CV, so left there: "
                     + ", ".join(f"{f} ({c})" for f, c in cvs["elsewhere"].items()) + ".")
-    if added:
-        msg += f" Added {added} title keyword(s) to criteria.yaml."
+    if crit["mode"] == "replaced":
+        msg += f" The starter title keywords in criteria.yaml were replaced by your {crit['added']}."
+    elif crit["added"]:
+        msg += f" Added {crit['added']} title keyword(s) to criteria.yaml."
+    if crit["removed"]:
+        msg += " Removed from the skip list because they match a keyword you want: " + ", ".join(crit["removed"]) + "."
+    if crit["conflicts"]:
+        msg += (" Careful: your skip list in criteria.yaml still contains " + ", ".join(crit["conflicts"])
+                + ", which would skip postings you want. Edit it if that is not what you mean.")
     raise Redirect(link("/profile", ok=msg + " Open the file to resolve any TODO lines (`applybot doctor` lists them)."))
 
 

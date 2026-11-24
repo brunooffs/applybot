@@ -80,7 +80,9 @@ def test_extract_marks_titles_the_text_uses_as_primary():
 
 def test_suggest_keywords_drops_seniority_and_generic_heads():
     kw = pi.suggest_keywords(["Senior Backend Engineer", "Solutions Architect", "Scrum Master", "Principal Engineer"])
-    assert kw == ["backend engineer", "backend", "solutions architect", "scrum master", "scrum", "engineer"]
+    assert kw == ["backend engineer", "backend", "solutions architect", "scrum master", "scrum"]   # "engineer" alone is too broad
+    assert pi.suggest_keywords(["Senior Talent Acquisition Partner", "Executive Recruiter", "Recruitment Consultant"]) == [
+        "talent acquisition partner", "talent", "executive recruiter", "recruitment consultant", "recruitment"]
     assert pi.clean_keywords("  Backend Engineer \nbackend engineer\n\nx\n") == ["backend engineer"]
 
 
@@ -131,25 +133,69 @@ def test_profile_is_written_only_over_the_fictional_example(tmp_path):
     assert (home / "config" / "profile.yaml").read_text() == mine
 
 
-def test_keywords_are_appended_never_removed_and_idempotent(tmp_path):
+def crit(home):
+    return yaml.safe_load((home / "config" / "criteria.yaml").read_text())
+
+
+def test_starter_lists_are_replaced_and_clashing_skip_words_are_dropped(tmp_path):
     home = make_home(tmp_path)
     cfg = load_config(home)
-    before = yaml.safe_load((home / "config" / "criteria.yaml").read_text())
-    n = pi.apply_keywords(cfg, ["backend engineer", "Quantum Gardener", "devops"])
-    after = yaml.safe_load((home / "config" / "criteria.yaml").read_text())
-    old = before["prefilter"]["include_title_keywords"]
-    assert after["prefilter"]["include_title_keywords"][:len(old)] == old
-    assert after["prefilter"]["include_title_keywords"][len(old):] == ["backend engineer", "quantum gardener"][: n]
+    before = crit(home)
+    assert pi.criteria_is_starter(cfg)
+    out = pi.apply_criteria(cfg, ["talent acquisition partner", "Recruiter", "recruitment"])
+    after = crit(home)
+    assert out == {"mode": "replaced", "added": 3, "removed": ["recruiter"], "conflicts": []}
+    assert after["prefilter"]["include_title_keywords"] == ["talent acquisition partner", "recruiter", "recruitment"]
+    assert "recruiter" not in after["prefilter"]["exclude_title_keywords"]
+    assert after["prefilter"]["exclude_title_keywords"] == [k for k in before["prefilter"]["exclude_title_keywords"] if k != "recruiter"]
     assert {k: v for k, v in after.items() if k != "prefilter"} == {k: v for k, v in before.items() if k != "prefilter"}
-    assert after["prefilter"]["exclude_title_keywords"] == before["prefilter"]["exclude_title_keywords"]
-    assert pi.apply_keywords(load_config(home), ["backend engineer", "quantum gardener"]) == 0
+    assert "weights:" in (home / "config" / "criteria.yaml").read_text() and "# whole-word match" in (home / "config" / "criteria.yaml").read_text()
+    assert not pi.criteria_is_starter(load_config(home))
+    again = pi.apply_criteria(load_config(home), ["talent acquisition partner", "recruiter", "recruitment"])
+    assert again["mode"] == "appended" and again["added"] == 0
+
+
+def test_a_recruiter_profile_can_find_recruiter_jobs(tmp_path):
+    from applybot.models import Job
+    from applybot.prefilter import prefilter
+    home = make_home(tmp_path)
+    kws = pi.suggest_keywords(["Senior Talent Acquisition Partner", "Senior Recruiter", "Technical Recruiter"])
+    pi.apply_criteria(load_config(home), kws)
+    crit_cfg = load_config(home).criteria
+    job = lambda t: Job(source="x", ext_id=t, company="c", title=t, url="u", location="Lisbon")   # noqa: E731
+    assert prefilter(job("Senior Recruiter"), crit_cfg)[0]
+    assert prefilter(job("Talent Acquisition Partner"), crit_cfg)[0]
+    assert not prefilter(job("Junior Recruiter"), crit_cfg)[0]            # the skip words that remain still apply
+    assert not prefilter(job("Backend Engineer"), crit_cfg)[0]            # the engineering starter keywords are gone
+
+
+def test_your_own_lists_only_get_keywords_appended(tmp_path):
+    home = make_home(tmp_path)
+    (home / "config" / "criteria.yaml").write_text(
+        "prefilter:\n  include_title_keywords:\n    - backend   # mine\n    # a note\n    - go\n"
+        "  exclude_title_keywords:\n    - junior\n    - recruiter\nweights:\n  technical: 30\n")
+    cfg = load_config(home)
+    assert not pi.criteria_is_starter(cfg)
+    out = pi.apply_criteria(cfg, ["recruiter", "Backend", "quantum gardener"])
+    text = (home / "config" / "criteria.yaml").read_text()
+    assert out == {"mode": "appended", "added": 2, "removed": [], "conflicts": ["recruiter"]}   # warned, not removed
+    assert crit(home)["prefilter"]["include_title_keywords"] == ["backend", "go", "recruiter", "quantum gardener"]
+    assert crit(home)["prefilter"]["exclude_title_keywords"] == ["junior", "recruiter"]
+    assert "# mine" in text and "# a note" in text
+
+
+def test_an_empty_skip_list_stays_valid(tmp_path):
+    home = make_home(tmp_path)
+    pi.apply_criteria(load_config(home), ["recruiter"], exclude=[])
+    c = crit(home)
+    assert c["prefilter"]["exclude_title_keywords"] == [] and "# whole-word match" in (home / "config" / "criteria.yaml").read_text()
 
 
 def test_keywords_work_without_a_criteria_file_of_your_own(tmp_path):
     home = make_home(tmp_path)
     (home / "config" / "criteria.yaml").unlink()
-    assert pi.apply_keywords(load_config(home), ["quantum gardener"]) == 1
-    assert "quantum gardener" in (home / "config" / "criteria.yaml").read_text()
+    assert pi.apply_criteria(load_config(home), ["quantum gardener"])["added"] == 1
+    assert crit(home)["prefilter"]["include_title_keywords"] == ["quantum gardener"]
 
 
 # --- the page, driven the way a browser drives it ---------------------------------------
@@ -267,7 +313,7 @@ def test_profile_page_upload_review_and_save(env, monkeypatch):  # noqa: F811
     assert load_config(env.home).family_to_cv == {"Senior Backend Engineer": "cv"}     # the uploaded cv.txt took over the starter entry
     assert (env.home / "cvs" / "cv.txt").read_text() == CV and (env.home / "cvs" / "cover-letters" / "letter.txt").exists()
     kws = yaml.safe_load((env.home / "config" / "criteria.yaml").read_text())["prefilter"]["include_title_keywords"]
-    assert "backend engineer" in kws and "backend" in kws
+    assert kws == ["backend engineer", "backend"]     # the starter engineering list was replaced
     assert pi.load_state(load_config(env.home)) is None
 
 

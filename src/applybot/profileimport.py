@@ -13,7 +13,8 @@ Same rule as the facts import: the model proposes, plain code checks, you decide
                              config/profile.suggested.yaml to compare by hand
        cvs/cvs.yaml          the uploaded CV is already stored and listed (cvstore.py); it is given
                              your families, except those that belong to another CV
-       config/criteria.yaml  new title keywords are appended to the include list; nothing is removed
+       config/criteria.yaml  title keywords: the starter lists (written for a backend-engineering search)
+                             are replaced; lists you edited only get new keywords appended
 Every file written is parsed again and must equal what was confirmed, or nothing is written.
 """
 from __future__ import annotations
@@ -44,7 +45,8 @@ TYPES = ("permanent", "b2b", "contract", "freelance")
 TIERS = ("primary", "secondary", "selective")
 SENIORITY_WORDS = {"senior", "sr", "sr.", "lead", "principal", "staff", "junior", "jr", "jr."}
 GENERIC_HEADS = {"engineer", "developer", "manager", "lead", "software", "technical", "senior", "principal",
-                 "staff", "solutions", "systems", "full", "agile", "project", "delivery", "ai", "infrastructure"}
+                 "staff", "solutions", "systems", "full", "agile", "project", "delivery", "ai", "infrastructure",
+                 "executive", "associate", "assistant", "head", "chief", "global", "specialist", "consultant", "analyst"}
 
 SYSTEM = """You read a person's CV, and sometimes a second document (a cover letter or profile text), and propose
 what goes into a job-matching profile so they can review it. Output JSON only.
@@ -150,7 +152,7 @@ def suggest_keywords(families: list[str]) -> list[str]:
         words = [w for w in re.split(r"\s+", fam.lower().strip()) if w]
         while words and words[0] in SENIORITY_WORDS:
             words.pop(0)
-        if not words:
+        if not words or (len(words) == 1 and words[0] in GENERIC_HEADS):   # "engineer" alone would match every job
             continue
         for kw in (" ".join(words), words[0] if len(words) > 1 and words[0] not in GENERIC_HEADS else ""):
             if kw and kw not in out and 2 <= len(kw) <= 40:
@@ -297,40 +299,116 @@ def apply_profile(cfg, profile: dict) -> Path:
     return target
 
 
-# --- 5. title keywords --------------------------------------------------------------------
+# --- 5. title keywords (criteria.yaml) ----------------------------------------------------
 
-def apply_keywords(cfg, extra: list[str]) -> int:
-    """Append new keywords to prefilter.include_title_keywords in criteria.yaml. Returns how many were added."""
+_LISTS = ("include_title_keywords", "exclude_title_keywords")
+
+
+def _prefilter_lists(data: dict) -> dict[str, list[str]]:
+    pf = (data or {}).get("prefilter") or {}
+    return {k: [str(x) for x in pf.get(k) or []] for k in _LISTS}
+
+
+def criteria_is_starter(cfg) -> bool:
+    """True while criteria.yaml is missing or its two title lists are still the packaged starter lists
+    (written for a backend-engineering search), so replacing them loses nothing of yours."""
+    from .config import DEFAULTS
+    path = cfg.root / "config" / "criteria.yaml"
+    if not path.exists():
+        return True
+    mine = _prefilter_lists(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    base = _prefilter_lists(yaml.safe_load((DEFAULTS / "config" / "criteria.yaml").read_text(encoding="utf-8")) or {})
+    return all([x.lower() for x in mine[k]] == [x.lower() for x in base[k]] for k in _LISTS)
+
+
+def conflicts(include: list[str], exclude: list[str]) -> list[str]:
+    """Words in the skip list that occur, as whole words, inside a keyword you want: a posting with that
+    keyword in its title would be skipped anyway ('recruiter' in both lists rejects every recruiter job)."""
+    return [e for e in exclude
+            if any(re.search(r"\b" + re.escape(e.lower()) + r"\b", k.lower()) for k in include)]
+
+
+def starter_excludes(cfg) -> list[str]:
     from .config import DEFAULTS
     path = cfg.root / "config" / "criteria.yaml"
     src = path if path.exists() else DEFAULTS / "config" / "criteria.yaml"
-    text = src.read_text(encoding="utf-8")
+    return _prefilter_lists(yaml.safe_load(src.read_text(encoding="utf-8")) or {})["exclude_title_keywords"]
+
+
+def _list_span(lines: list[str], key: str) -> tuple[int, int, int, str]:
+    """(header line, last item line, header indent, trailing comment) of a YAML list under `key`."""
+    pat = re.compile(r"^(\s+)" + key + r":\s*(?:\[\s*\])?\s*(#.*)?$")
+    for i, ln in enumerate(lines):
+        m = pat.match(ln)
+        if m:
+            indent, last = len(m.group(1)), i
+            for j in range(i + 1, len(lines)):
+                if re.match(r"^ {%d,}- " % (indent + 1), lines[j]):
+                    last = j
+                elif lines[j].strip() and not lines[j].lstrip().startswith("#"):
+                    break
+            return i, last, indent, m.group(2) or ""
+    raise ImportProblem(f"criteria.yaml has no {key} list I can change. Nothing was changed.")
+
+
+def _item(k: str, indent: int) -> str:
+    return " " * indent + yaml.safe_dump([k], allow_unicode=True, default_flow_style=False, width=10**6).strip()
+
+
+def _replace_items(lines: list[str], key: str, items: list[str]) -> None:
+    head, last, indent, comment = _list_span(lines, key)
+    tail = ("  " + comment) if comment else ""
+    new = [f"{' ' * indent}{key}:{tail}"] + [_item(k, indent + 2) for k in items] if items else [f"{' ' * indent}{key}: []{tail}"]
+    lines[head:last + 1] = new
+
+
+def _append_items(lines: list[str], key: str, items: list[str]) -> None:
+    head, last, indent, _ = _list_span(lines, key)
+    item_indent = len(lines[last]) - len(lines[last].lstrip(" ")) if last > head else indent + 2
+    lines[last + 1:last + 1] = [_item(k, item_indent) for k in items]
+
+
+def apply_criteria(cfg, include, exclude=None) -> dict:
+    """Update the title keywords in criteria.yaml.
+    Still the starter lists: both are replaced by `include` / `exclude` (skip words that clash with a wanted
+    keyword are dropped and reported). Your own lists: new include keywords are appended, nothing is removed.
+    Returns {'mode', 'added', 'removed': [...], 'conflicts': [...]}."""
+    from .config import DEFAULTS
+    path = cfg.root / "config" / "criteria.yaml"
+    text = (path if path.exists() else DEFAULTS / "config" / "criteria.yaml").read_text(encoding="utf-8")
     data = yaml.safe_load(text) or {}
-    have = [str(k).lower() for k in (data.get("prefilter") or {}).get("include_title_keywords") or []]
-    new = [k for k in clean_keywords(extra) if k not in have]
-    if not new:
-        return 0
+    have = _prefilter_lists(data)
+    starter = criteria_is_starter(cfg)
+    want = clean_keywords(include)
+    removed: list[str] = []
+    if starter:
+        inc = want
+        exc_in = clean_keywords(exclude) if exclude is not None else [x.lower() for x in have["exclude_title_keywords"]]
+        removed = conflicts(inc, exc_in)
+        exc = [e for e in exc_in if e not in removed]
+        added = len(inc)
+    else:
+        known = [x.lower() for x in have["include_title_keywords"]]
+        new = [k for k in want if k not in known]
+        inc, exc, added = have["include_title_keywords"] + new, have["exclude_title_keywords"], len(new)
+    left = conflicts(inc, exc)
+    out = {"mode": "replaced" if starter else "appended", "added": added, "removed": removed, "conflicts": left}
+    if inc == have["include_title_keywords"] and exc == have["exclude_title_keywords"]:
+        return {**out, "added": 0}
     lines = text.rstrip("\n").split("\n")
-    start = next((i for i, ln in enumerate(lines) if re.match(r"^\s+include_title_keywords:\s*(#.*)?$", ln)), None)
-    if start is None:
-        raise ImportProblem("criteria.yaml has no include_title_keywords list I can add to. Nothing was changed.")
-    indent = len(lines[start]) - len(lines[start].lstrip(" "))
-    last = start
-    for i in range(start + 1, len(lines)):
-        if re.match(r"^ {%d,}- " % (indent + 1), lines[i]):
-            last = i
-        elif lines[i].strip() and not lines[i].lstrip().startswith("#"):
-            break
-    item_indent = len(lines[last]) - len(lines[last].lstrip(" ")) if last > start else indent + 2
-    add = [" " * item_indent + yaml.safe_dump([k], allow_unicode=True, default_flow_style=False, width=10**6).strip() for k in new]
-    lines[last + 1:last + 1] = add
-    out = "\n".join(lines) + "\n"
+    if starter:
+        _replace_items(lines, "include_title_keywords", inc)
+        _replace_items(lines, "exclude_title_keywords", exc)
+    elif added:
+        _append_items(lines, "include_title_keywords", inc[len(have["include_title_keywords"]):])
     expected = copy.deepcopy(data)
-    expected["prefilter"]["include_title_keywords"] = list(expected["prefilter"]["include_title_keywords"]) + new
-    if yaml.safe_load(out) != expected:
-        raise ImportProblem("I could not add the keywords to criteria.yaml safely. Nothing was changed.")
-    _atomic(path, out)
-    return len(new)
+    expected.setdefault("prefilter", {})["include_title_keywords"] = inc
+    expected["prefilter"]["exclude_title_keywords"] = exc
+    new_text = "\n".join(lines) + "\n"
+    if yaml.safe_load(new_text) != expected:
+        raise ImportProblem("I could not update the keywords in criteria.yaml safely. Nothing was changed.")
+    _atomic(path, new_text)
+    return out
 
 
 # --- 6. the pending import (survives a restart) -------------------------------------------
