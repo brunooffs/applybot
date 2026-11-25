@@ -725,3 +725,16 @@ def test_postings_page_lists_scored_waiting_and_filtered(env):
     assert "<b>Intern</b>" not in f
     assert 'href="/job?id=gh%3A2"' in page and req(env, "GET", "/job?id=gh%3A2")[0] == 200   # a posting without a letter opens
     assert req(env, "GET", "/postings?tab=nonsense")[0] == 200
+
+
+def test_top_bar_groups_the_application_pages_in_a_dropdown(env):
+    page = req(env, "GET", "/")[1]
+    nav = page.split("<nav>")[1].split("</nav>")[0]
+    tops = re.findall(r'<a href="([^"]+)"|<summary>([^<]+)</summary>', nav.split("<details")[0] + "<summary>Applications</summary>" + nav.split("</details>")[1])
+    assert [a or b for a, b in tops] == ["/", "Applications", "/facts", "/profile", "/sources", "/run", "/settings"]
+    drop = nav.split("<details")[1].split("</details>")[0]
+    assert re.findall(r'href="([^"]+)"', drop) == ["/try", "/postings", "/queue", "/queue?tab=approved", "/inbox", "/history"]
+    assert "dd on" not in page                                            # not highlighted on Overview
+    for path in ("/postings", "/history", "/inbox", "/try", "/queue?tab=approved"):
+        assert 'class="dd on"' in req(env, "GET", path)[1], path
+    assert 'class="dd on"' not in req(env, "GET", "/facts")[1]
