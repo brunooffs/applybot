@@ -83,6 +83,12 @@ CSS = """
 header{border-bottom:1px solid var(--line);background:var(--card)}nav{max-width:1000px;margin:0 auto;padding:0 20px;display:flex;gap:4px;align-items:center;flex-wrap:wrap}
 nav b{margin-right:16px}nav a{padding:14px 12px;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}
 nav a.on,nav a:hover{color:var(--fg);border-bottom-color:var(--acc)}main{max-width:1000px;margin:0 auto;padding:24px 20px 60px}
+nav details.dd{position:relative;margin:0}nav details.dd>summary{list-style:none;cursor:pointer;padding:14px 12px;color:var(--mut);border-bottom:2px solid transparent}
+nav details.dd>summary::-webkit-details-marker{display:none}nav details.dd>summary::after{content:" ▾";font-size:11px}
+nav details.dd.on>summary,nav details.dd[open]>summary,nav details.dd>summary:hover{color:var(--fg)}nav details.dd.on>summary{border-bottom-color:var(--acc)}
+nav details.dd>div{position:absolute;left:0;top:100%;z-index:10;min-width:180px;display:flex;flex-direction:column;background:var(--card);
+border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.15);padding:4px 0}
+nav details.dd>div a{padding:8px 16px;border-bottom:0}nav details.dd>div a.on,nav details.dd>div a:hover{background:var(--bg)}
 h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px}.sub{color:var(--mut);margin:0 0 18px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.grid .card{margin:0}
@@ -114,8 +120,11 @@ ins{background:rgba(46,160,67,.2);text-decoration:none}del{background:rgba(220,5
 details{margin:10px 0}summary{cursor:pointer;color:var(--mut)}ul{margin:6px 0;padding-left:20px}.issue{color:var(--bad)}
 """
 
-NAV = (("overview", "/", "Overview"), ("try", "/try", "Try a posting"), ("postings", "/postings", "Postings"), ("review", "/queue", "Review"),
-       ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"), ("facts", "/facts", "Facts"), ("profile", "/profile", "Profile"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
+APPLICATIONS = (("try", "/try", "Try a posting"), ("postings", "/postings", "Postings"), ("review", "/queue", "Review"),
+                ("approved", "/queue?tab=approved", "Approved"), ("inbox", "/inbox", "Inbox"), ("history", "/history", "History"))
+# top bar: a plain link, or ("group", label, items) for a dropdown
+NAV = (("overview", "/", "Overview"), ("group", "Applications", APPLICATIONS), ("facts", "/facts", "Facts"),
+       ("profile", "/profile", "Profile"), ("sources", "/sources", "Sources"), ("run", "/run", "Run"),
        ("settings", "/settings", "Models"))
 
 
@@ -162,7 +171,12 @@ def safe_link(url: str, text: str | None = None) -> str:
 
 
 def layout(body: str, nonce: str, title: str, active: str, ok: str = "", err: str = "") -> str:
-    nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in NAV)
+    def item(key, href, label):
+        return f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>'
+    nav = "".join(
+        item(*e) if e[0] != "group" else
+        f'<details class="dd{" on" if any(k == active for k, _, _ in e[2]) else ""}"><summary>{e[1]}</summary>'
+        f'<div>{"".join(item(*i) for i in e[2])}</div></details>' for e in NAV)
     flash = (f'<div class="flash ok">{esc(ok)}</div>' if ok else "") + (f'<div class="flash err">{esc(err)}</div>' if err else "")
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'{"<meta http-equiv=refresh content=3>" if "<!--refresh-->" in body else ""}'
@@ -171,6 +185,8 @@ def layout(body: str, nonce: str, title: str, active: str, ok: str = "", err: st
             f'<script nonce="{nonce}">for(const f of document.querySelectorAll("form[data-busy]"))f.addEventListener("submit",()=>{{'
             f'for(const b of f.querySelectorAll("button"))setTimeout(()=>{{b.disabled=true}},0);'
             f'const s=f.querySelector(".busy");if(s)s.hidden=false}});'
+            f'const dd=document.querySelector("nav details.dd");if(dd){{document.addEventListener("click",e=>{{if(!dd.contains(e.target))dd.open=false}});'
+            f'document.addEventListener("keydown",e=>{{if(e.key==="Escape")dd.open=false}})}}'
             f'for(const b of document.querySelectorAll("[data-copy]"))b.addEventListener("click",()=>{{'
             f'navigator.clipboard.writeText(document.querySelector(b.dataset.copy).textContent).then(()=>{{b.textContent="Copied"}})}});</script></body></html>')
 
