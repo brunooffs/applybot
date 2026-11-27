@@ -1035,7 +1035,10 @@ def page_sources(ctx, q):
     body = (
         "<h1>Sources</h1><p class='sub'>Where postings come from. Only public job-board APIs; no scraping and no logins. "
         "Which titles are wanted is decided afterwards by <code>config/criteria.yaml</code>.</p>"
-        f"<form method='post' action='/sources/save'>{hidden(tok)}{boxes}"
+        f"<form method='post' action='/sources/save'>{hidden(tok)}"
+        "<h2>Company career boards</h2><p class='sub'>One token per company, from its careers page URL. "
+        f"Workable and Recruitee are new.</p>{boxes}"
+        "<h2>Job boards</h2><p class='sub'>Whole boards, no company list needed.</p>"
         "<div class='card'><label style='display:flex;gap:8px;align-items:center'><input type='checkbox' name='remotive' value='1'"
         f"{' checked' if s['remotive']['enabled'] else ''}> <b>Remotive</b> <span class='mut'>· remote jobs, by category</span></label>"
         f"<p>{checks}</p><label>Other category slugs <span class='mut'>(comma separated; Check them below first)</span></label>"
