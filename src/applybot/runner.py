@@ -19,7 +19,8 @@ from . import db, pipeline
 from .config import load_config
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-KINDS = ("greenhouse", "lever", "ashby")
+KINDS = ("greenhouse", "lever", "ashby", "workable", "recruitee")
+ARBEITNOW_MAX_PAGES = 5
 # Remotive's category slugs. Only software-dev and devops are confirmed live here; check any other
 # with "Check" on the Sources page before relying on it.
 REMOTIVE_KNOWN = ["software-dev", "devops", "data", "product", "qa", "design", "customer-support", "all-others"]
@@ -28,7 +29,10 @@ CHECK_URLS = {
     "greenhouse": "https://boards-api.greenhouse.io/v1/boards/{t}/jobs",
     "lever": "https://api.lever.co/v0/postings/{t}?mode=json",
     "ashby": "https://api.ashbyhq.com/posting-api/job-board/{t}",
+    "workable": "https://www.workable.com/api/accounts/{t}",
+    "recruitee": "https://{t}.recruitee.com/api/offers/",
     "remotive": "https://remotive.com/api/remote-jobs?category={t}&limit=1000",
+    "arbeitnow": "https://www.arbeitnow.com/api/job-board-api?page=1",
 }
 
 
@@ -40,7 +44,8 @@ def _count(kind: str, data) -> int:
     if kind == "lever":
         return len(data) if isinstance(data, list) else 0
     if isinstance(data, dict):
-        return len(data.get("jobs") or [])
+        key = {"recruitee": "offers", "arbeitnow": "data"}.get(kind, "jobs")
+        return len(data.get(key) or [])
     return 0
 
 
@@ -74,8 +79,18 @@ def read_sources(cfg) -> dict:
     s = cfg.sources or {}
     rem = s.get("remotive") or {}
     return {"greenhouse": list(s.get("greenhouse") or []), "lever": list(s.get("lever") or []),
-            "ashby": list(s.get("ashby") or []),
-            "remotive": {"enabled": bool(rem.get("enabled")), "categories": list(rem.get("categories") or [])}}
+            "ashby": list(s.get("ashby") or []), "workable": list(s.get("workable") or []),
+            "recruitee": list(s.get("recruitee") or []),
+            "remotive": {"enabled": bool(rem.get("enabled")), "categories": list(rem.get("categories") or [])},
+            "arbeitnow": {"enabled": bool((s.get("arbeitnow") or {}).get("enabled")),
+                          "pages": _pages((s.get("arbeitnow") or {}).get("pages"))}}
+
+
+def _pages(v) -> int:
+    try:
+        return min(max(int(v), 1), ARBEITNOW_MAX_PAGES)
+    except (TypeError, ValueError):
+        return 2
 
 
 def parse_tokens(text: str) -> list[str]:
@@ -95,7 +110,11 @@ def parse_tokens(text: str) -> list[str]:
 HEADER = """# Where jobs come from. Only sources that publish machine-readable boards.
 # LinkedIn and Indeed are deliberately NOT here (ToS / account-ban risk).
 # Edited by the dashboard's Sources page; the previous file is kept as sources.yaml.bak.
-#   boards.greenhouse.io/<token>   jobs.lever.co/<token>   jobs.ashbyhq.com/<token>
+# Company tokens come from the company's careers URL:
+#   greenhouse  boards.greenhouse.io/<token>      lever      jobs.lever.co/<token>
+#   ashby       jobs.ashbyhq.com/<token>          workable   apply.workable.com/<token>
+#   recruitee   <token>.recruitee.com
+# remotive (by category) and arbeitnow (Europe, no token) are switches.
 """
 
 
@@ -104,8 +123,10 @@ def save_sources(cfg, sources: dict) -> None:
     rem = sources.get("remotive") or {}
     cats = parse_tokens(" ".join(rem.get("categories") or []))
     clean["remotive"] = {"enabled": bool(rem.get("enabled")), "categories": cats}
+    arb = sources.get("arbeitnow") or {}
+    clean["arbeitnow"] = {"enabled": bool(arb.get("enabled")), "pages": _pages(arb.get("pages"))}
     path = cfg.root / "config" / "sources.yaml"
-    out = HEADER + "\n" + yaml.safe_dump(clean, sort_keys=False, default_flow_style=None, allow_unicode=True)
+    out = HEADER + "\n" + yaml.safe_dump(clean, sort_keys=False, default_flow_style=False, allow_unicode=True)
     if yaml.safe_load(out) != clean:
         raise SourceError("could not write sources.yaml safely")
     if path.exists():

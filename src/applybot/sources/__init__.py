@@ -13,7 +13,10 @@ from typing import Iterator
 import httpx
 
 from ..models import Job
-from . import ashby, greenhouse, lever, remotive
+from . import arbeitnow, ashby, greenhouse, lever, recruitee, remotive, workable
+
+# board kinds that are a list of company tokens in sources.yaml
+TOKEN_SOURCES = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby, "workable": workable, "recruitee": recruitee}
 
 log = logging.getLogger("applybot.sources")
 
@@ -24,7 +27,7 @@ def iter_jobs(cfg, on_error=None, on_source=None) -> Iterator[Job]:
     delay = cfg.settings["http"].get("delay_seconds", 1.0)
     src = cfg.sources
     with httpx.Client(timeout=30, headers=headers, follow_redirects=True) as http:
-        for mod, key in ((greenhouse, "greenhouse"), (lever, "lever"), (ashby, "ashby")):
+        for key, mod in TOKEN_SOURCES.items():
             for token in src.get(key) or []:
                 if on_source:
                     on_source(key, token)
@@ -47,3 +50,13 @@ def iter_jobs(cfg, on_error=None, on_source=None) -> Iterator[Job]:
                     if on_error:
                         on_error("remotive", cat or "all", e)
                 time.sleep(delay)
+        arb = src.get("arbeitnow") or {}
+        if arb.get("enabled"):
+            if on_source:
+                on_source("arbeitnow", "all")
+            try:
+                yield from arbeitnow.fetch(arb.get("pages") or 2, http, delay)
+            except Exception as e:
+                log.warning("arbeitnow failed: %s", e)
+                if on_error:
+                    on_error("arbeitnow", "all", e)

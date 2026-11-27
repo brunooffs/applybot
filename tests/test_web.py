@@ -758,3 +758,20 @@ def test_contact_email_can_be_set_and_cleared_on_the_job_page(env):
     assert conn.execute("SELECT contact_email FROM scores").fetchone()[0] is None
     code, _, loc = req(env, "POST", "/job/action", {"id": "gh:none", "action": "contact", "contact_email": "a@b.test"})
     assert code == 303 and "err=" in loc          # unknown job: refused, nothing written
+
+
+def test_sources_page_has_every_kind_and_saves_arbeitnow(env):
+    page = req(env, "GET", "/sources")[1]
+    for k in ("Workable", "Recruitee", "Arbeitnow"):
+        assert k in page
+    assert 'name="workable"' in page.replace("'", '"') and 'name="arbeitnow_pages"' in page.replace("'", '"')
+    code, _, loc = req(env, "POST", "/sources/save", {"greenhouse": "", "lever": "", "ashby": "", "workable": "netguru, lyst",
+                                                       "recruitee": "vandebron", "arbeitnow": "1", "arbeitnow_pages": "99"})
+    assert code == 303 and "ok=" in loc
+    src = load_config(env.home).sources
+    assert src["workable"] == ["netguru", "lyst"] and src["recruitee"] == ["vandebron"]
+    assert src["arbeitnow"] == {"enabled": True, "pages": 5}                       # clamped
+    text = (env.home / "config" / "sources.yaml").read_text()
+    assert "- netguru" in text and "workable:" in text                                # one token per line
+    req(env, "POST", "/sources/save", {"greenhouse": "", "lever": "", "ashby": "", "arbeitnow_pages": "x"})
+    assert load_config(env.home).sources["arbeitnow"] == {"enabled": False, "pages": 2}

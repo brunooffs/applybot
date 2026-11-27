@@ -1014,7 +1014,8 @@ def parse_multipart(ctype: str, raw: bytes) -> dict:
 # --- sources and runs ----------------------------------------------------------------------
 
 SRC_HELP = {"greenhouse": "boards.greenhouse.io/&lt;token&gt;  or  job-boards.greenhouse.io/&lt;token&gt;",
-            "lever": "jobs.lever.co/&lt;token&gt;", "ashby": "jobs.ashbyhq.com/&lt;token&gt;"}
+            "lever": "jobs.lever.co/&lt;token&gt;", "ashby": "jobs.ashbyhq.com/&lt;token&gt;",
+            "workable": "apply.workable.com/&lt;token&gt;", "recruitee": "&lt;token&gt;.recruitee.com"}
 
 
 def page_sources(ctx, q):
@@ -1030,7 +1031,7 @@ def page_sources(ctx, q):
         f"<input type='checkbox' name='cat' value='{c}'{' checked' if c in cats else ''}> {c}</label>"
         for c in runner.REMOTIVE_KNOWN)
     extra = ", ".join(c for c in cats if c not in runner.REMOTIVE_KNOWN)
-    kinds = "".join(f"<option>{k}</option>" for k in (*runner.KINDS, "remotive"))
+    kinds = "".join(f"<option>{k}</option>" for k in (*runner.KINDS, "remotive", "arbeitnow"))
     body = (
         "<h1>Sources</h1><p class='sub'>Where postings come from. Only public job-board APIs; no scraping and no logins. "
         "Which titles are wanted is decided afterwards by <code>config/criteria.yaml</code>.</p>"
@@ -1042,6 +1043,11 @@ def page_sources(ctx, q):
         "<p class='mut'>A category only decides which feed is downloaded. Whether a title is wanted (Software Architect, "
         "Backend Engineer, Scrum Master…) is decided afterwards by the keywords in <code>criteria.yaml</code>. "
         "Confirmed to work: software-dev, devops. The others are Remotive's category names but not verified here: Check before relying on them.</p></div>"
+        "<div class='card'><label style='display:flex;gap:8px;align-items:center'><input type='checkbox' name='arbeitnow' value='1'"
+        f"{' checked' if s['arbeitnow']['enabled'] else ''}> <b>Arbeitnow</b> <span class='mut'>· Europe-wide job board, no token needed</span></label>"
+        f"<p><label style='display:inline'>Pages per run</label> <input type='number' name='arbeitnow_pages' min='1' max='{runner.ARBEITNOW_MAX_PAGES}' "
+        f"value='{s['arbeitnow']['pages']}' style='width:70px'> <span class='mut'>· 300 newest postings per page. "
+        "Free to use; it asks to be linked back to (arbeitnow.com) and not abused.</span></p></div>"
         "<p><button class='pri'>Save sources</button> <span class='mut'>The previous file is kept as sources.yaml.bak.</span></p></form>"
         "<h2>Check a token</h2><div class='card'><p class='mut' style='margin-top:0'>Asks the board's public API whether the token exists "
         "and how many postings it lists. Nothing is saved.</p>"
@@ -1057,7 +1063,8 @@ def do_sources_save(ctx, f):
         runner.save_sources(ctx["cfg"], {
             **{k: runner.parse_tokens(f.get(k, "")) for k in runner.KINDS},
             "remotive": {"enabled": bool(f.get("remotive")),
-                         "categories": cats + runner.parse_tokens(f.get("cat_extra", ""))}})
+                         "categories": cats + runner.parse_tokens(f.get("cat_extra", ""))},
+            "arbeitnow": {"enabled": bool(f.get("arbeitnow")), "pages": f.get("arbeitnow_pages")}})
     except runner.SourceError as e:
         raise Redirect(link("/sources", err=str(e)))
     raise Redirect(link("/sources", ok="Saved. The next run uses these sources."))

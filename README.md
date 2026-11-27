@@ -112,7 +112,7 @@ applybot stats
 applybot serve --open        # http://127.0.0.1:8765, Ctrl-C to stop
 ```
 
-Sources (add and check Greenhouse/Lever/Ashby tokens and Remotive categories), Run (fetch, score and draft in the background with progress, a stop button and a minimum score for drafting), paste-a-posting (`try`), the review queue with an editor, approve/reject, a
+Sources (add and check Greenhouse/Lever/Ashby/Workable/Recruitee tokens, Remotive categories and the Arbeitnow Europe board), Run (fetch, score and draft in the background with progress, a stop button and a minimum score for drafting), paste-a-posting (`try`), the review queue with an editor, approve/reject, a
 confirmation page before every send, and the inbox with reply drafts. It calls
 the same code as the commands above, so the same checks apply (fact-check, CV
 file must exist, daily cap). It only answers on your own computer.
@@ -163,7 +163,7 @@ are not handled yet.
 
 - ATS form filling (headless Playwright), most postings have no email address.
 - Reading recruiter replies and drafting responses.
-- Source adapters beyond Greenhouse and Remotive are tested against documented shapes only (Greenhouse and Remotive were checked live).
+- Source adapters beyond Greenhouse and Remotive are tested against documented shapes only (Greenhouse and Remotive were checked live; Arbeitnow and Recruitee were read from live responses once, Workable from its API reference only). Arbeitnow is free to use and asks for a link back to arbeitnow.com. Only boards with a public JSON API are supported (no HTML or XML feeds).
 - HN "Who is hiring" source.
 
 ## Known limitations
