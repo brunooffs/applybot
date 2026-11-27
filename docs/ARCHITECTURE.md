@@ -20,10 +20,10 @@ is always yours to answer.
 ```
  SOURCES                       JUDGEMENT                          OUTPUT
  -------                       ---------                          ------
- Greenhouse boards ─┐
- Lever boards      ─┤  ingest     prefilter      score (LLM extracts,
- Ashby boards      ─┼────────▶  (keywords,   ─▶  code decides)  ──▶ reject  (stored, no letter)
- Remotive feed     ─┘   dedupe)   cheap, no LLM)  + pick CV         human   ──┐
+ Greenhouse, Lever ─┐
+ Ashby, Workable   ─┤  ingest     prefilter      score (LLM extracts,
+ Recruitee         ─┼────────▶  (keywords,   ─▶  code decides)  ──▶ reject  (stored, no letter)
+ Remotive, Arbeitnow ┘   dedupe)   cheap, no LLM)  + pick CV         human   ──┐
                                                                     auto_eligible ─┤
                                                                                    ▼
                                   draft letter (LLM, facts.yaml only)
