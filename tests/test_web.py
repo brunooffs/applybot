@@ -764,6 +764,7 @@ def test_sources_page_has_every_kind_and_saves_arbeitnow(env):
     page = req(env, "GET", "/sources")[1]
     for k in ("Workable", "Recruitee", "Arbeitnow"):
         assert k in page
+    assert page.index("Company career boards") < page.index("Workable") < page.index("Job boards") < page.index("Arbeitnow")
     assert 'name="workable"' in page.replace("'", '"') and 'name="arbeitnow_pages"' in page.replace("'", '"')
     code, _, loc = req(env, "POST", "/sources/save", {"greenhouse": "", "lever": "", "ashby": "", "workable": "netguru, lyst",
                                                        "recruitee": "vandebron", "arbeitnow": "1", "arbeitnow_pages": "99"})
