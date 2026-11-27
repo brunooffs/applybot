@@ -738,3 +738,23 @@ def test_top_bar_groups_the_application_pages_in_a_dropdown(env):
     for path in ("/postings", "/history", "/inbox", "/try", "/queue?tab=approved"):
         assert 'class="dd on"' in req(env, "GET", path)[1], path
     assert 'class="dd on"' not in req(env, "GET", "/facts")[1]
+
+
+def test_contact_email_can_be_set_and_cleared_on_the_job_page(env):
+    from applybot import db
+    from applybot.models import Job
+    from applybot.scoring import Verdict
+    conn = env.conn()
+    db.upsert_job(conn, Job(source="gh", ext_id="9", company="Acme", title="Senior Recruiter", url="https://x.test/9"))
+    db.save_score(conn, "gh:9", Verdict(family="F", cv_id=None, overall=80.0, decision="human"), {})
+    page = req(env, "GET", "/job?id=gh%3A9")[1]
+    assert 'name="contact_email"' in page and "no email in the posting" in page
+    assert req(env, "POST", "/job/action", {"id": "gh:9", "action": "contact", "contact_email": "jobs@acme.test"})[0] == 303
+    assert conn.execute("SELECT contact_email FROM scores WHERE job_id='gh:9'").fetchone()[0] == "jobs@acme.test"
+    assert 'value="jobs@acme.test"' in req(env, "GET", "/job?id=gh%3A9")[1]
+    code, _, loc = req(env, "POST", "/job/action", {"id": "gh:9", "action": "contact", "contact_email": "a@b.test, c@d.test"})
+    assert "does+not+look+like" in loc and conn.execute("SELECT contact_email FROM scores").fetchone()[0] == "jobs@acme.test"
+    req(env, "POST", "/job/action", {"id": "gh:9", "action": "contact", "contact_email": ""})
+    assert conn.execute("SELECT contact_email FROM scores").fetchone()[0] is None
+    code, _, loc = req(env, "POST", "/job/action", {"id": "gh:none", "action": "contact", "contact_email": "a@b.test"})
+    assert code == 303 and "err=" in loc          # unknown job: refused, nothing written

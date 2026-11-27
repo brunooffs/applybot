@@ -453,9 +453,14 @@ def page_job(ctx, q):
         reasons = "".join(f"<li>{esc(r)}</li>" for r in json.loads(score["reasons"] or "[]"))
         parts.append(
             f'<div class="card"><b>{score["overall"]}</b> · {badge(score["decision"])} · family: {esc(score["family"] or "-")}<br>'
-            f'<span class="mut">CV:</span> {cv}<br><span class="mut">Contact:</span> '
-            f'{esc(score["contact_email"]) if score["contact_email"] else "no email in the posting, apply through the posting"}'
-            f"<ul>{reasons}</ul></div>")
+            f'<span class="mut">CV:</span> {cv}'
+            f"<ul>{reasons}</ul>"
+            f'<form method="post" action="/job/action" class="row" style="margin-top:4px">{hidden(tok, id=job_id)}'
+            f'<label style="margin:0">Send applications to</label>'
+            f'<input type="text" name="contact_email" size="34" value="{esc(score["contact_email"] or "")}" placeholder="no email in the posting">'
+            '<button name="action" value="contact">Save email</button></form>'
+            f"<span class='mut'>{'Found in the posting, or set by you.' if score['contact_email'] else 'Without an email you apply through the posting page.'}"
+            " Applications are only sent to this address.</span></div>")
         try:
             raw = json.loads(score["raw"] or "{}")
         except ValueError:
@@ -1337,6 +1342,9 @@ def do_job_action(ctx, f):
         if action == "applied":
             actions.mark_applied(conn, job_id)
             raise Redirect(link("/queue", tab="sent", ok="Marked as applied."))
+        if action == "contact":
+            addr = actions.set_contact_email(conn, job_id, f.get("contact_email", ""))
+            raise Redirect(link("/job", id=job_id, ok=f"Applications for this job will go to {addr}." if addr else "Email cleared."))
         if action in ("save", "approve"):
             _, _, app = actions.load(conn, job_id)
             subject = f.get("subject", "").strip()
