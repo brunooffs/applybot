@@ -22,7 +22,10 @@ def relevance(job: Job, criteria: dict, work_eligibility: dict | None = None) ->
     return pts + {"yes": 3, "no": -10}.get(loc, 0)
 
 
-def prefilter(job: Job, criteria: dict) -> tuple[bool, str]:
+def prefilter(job: Job, criteria: dict, work_eligibility: dict | None = None) -> tuple[bool, str]:
+    """Title keywords, then (unless `prefilter.skip_unreachable_locations: false`) the location check of
+    eligibility.py: a posting whose location names only places outside your authorised regions
+    ("Remote US", "New York") is dropped here, before any model call. Anything unclear stays in."""
     pf = criteria.get("prefilter", {})
     title = job.title.lower()
     for kw in pf.get("exclude_title_keywords", []):
@@ -31,4 +34,9 @@ def prefilter(job: Job, criteria: dict) -> tuple[bool, str]:
     include = [k.lower() for k in pf.get("include_title_keywords", [])]
     if include and not any(k in title for k in include):
         return False, "no target keyword in title"
+    if work_eligibility and pf.get("skip_unreachable_locations", True):
+        from .eligibility import location_eligibility
+        loc, why = location_eligibility(job.location, job.description, work_eligibility)
+        if loc == "no":
+            return False, why
     return True, ""

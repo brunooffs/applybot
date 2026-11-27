@@ -21,6 +21,9 @@ auto_send_enabled: false
 
 # Cheap keyword gate before any LLM call. Case-insensitive.
 prefilter:
+  # Drop a posting before any model call when its location names only places outside
+  # profile.yaml work_eligibility ("Remote US", "New York"). Unclear locations stay in.
+  skip_unreachable_locations: true
   include_title_keywords:
     - backend
     - back-end
