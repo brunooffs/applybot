@@ -146,6 +146,19 @@ def cap_message(cfg) -> str:
     return f"daily cap ({cfg.settings['mail']['daily_cap']}) reached; remaining approved applications wait until tomorrow"
 
 
+def set_contact_email(conn, job_id: str, email: str) -> str:
+    """Set (or clear, with '') the address the application is sent to. For postings that give no email."""
+    email = (email or "").strip()
+    if email and not re.fullmatch(r"[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+", email):
+        raise ActionError(f"'{email}' does not look like one email address")
+    _, score, _ = load(conn, job_id)
+    if not score:
+        raise ActionError("this posting has not been scored yet, so there is nothing to attach an email to")
+    conn.execute("UPDATE scores SET contact_email=? WHERE job_id=?", (email or None, job_id))
+    conn.commit()
+    return email
+
+
 def prepare_application(cfg, conn, job_id: str) -> Prepared:
     """Everything that can be checked without touching the network."""
     job, score, app = load(conn, job_id)
