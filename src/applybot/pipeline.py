@@ -26,7 +26,7 @@ def ingest(conn, cfg, jobs) -> dict:
     stats = {"seen": 0, "new": 0, "filtered": 0, "duplicate": 0}
     for job in jobs:
         stats["seen"] += 1
-        ok, reason = prefilter(job, cfg.criteria)
+        ok, reason = prefilter(job, cfg.criteria, cfg.profile.get("work_eligibility"))
         inserted = db.upsert_job(conn, job, "new" if ok else "filtered", reason)
         if not inserted:
             stats["duplicate"] += 1

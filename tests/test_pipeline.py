@@ -56,3 +56,20 @@ def test_invented_number_lands_in_needs_edit(cfg):
     assert s["needs_edit"] == 1
     row = conn.execute("SELECT status, verification FROM applications").fetchone()
     assert row["status"] == "needs_edit" and "35" in json.loads(row["verification"])["issues"][0]
+
+
+def test_prefilter_drops_postings_located_outside_your_authorised_regions(cfg):
+    we = {"home_country": "Portugal", "authorised_regions": ["Portugal", "EU"], "accepts_relocation": False}
+    j = lambda loc, desc="Node.js role": Job("t", loc, "Acme", "Senior Backend Engineer", "u", loc, True, desc)   # noqa: E731
+    ok = lambda loc, desc="Node.js role", w=we: prefilter(j(loc, desc), cfg.criteria, w)[0]   # noqa: E731
+    assert not ok("Remote US") and not ok("New York, United States") and not ok("Remote - Canada")
+    reason = prefilter(j("Remote US"), cfg.criteria, we)[1]
+    assert "outside your authorised regions" in reason
+    assert ok("Remote - Europe") and ok("Lisbon, Portugal") and ok("Remote EMEA") and ok("Worldwide")
+    assert ok("Remote US; Remote Spain")                    # one reachable place keeps it in play
+    assert ok("Remote") and ok("")                          # nothing recognisable: the scorer decides
+    assert ok("Remote US", "We hire contractors via an employer of record")   # open to contractors: never dropped here
+    assert ok("Remote US", w=None)                          # no eligibility configured: location is not checked
+    assert ok("Remote US", w={**we, "accepts_relocation": True})
+    off = {**cfg.criteria, "prefilter": {**cfg.criteria["prefilter"], "skip_unreachable_locations": False}}
+    assert prefilter(j("Remote US"), off, we)[0]

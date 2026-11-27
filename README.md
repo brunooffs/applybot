@@ -168,6 +168,7 @@ are not handled yet.
 
 ## Known limitations
 
+- Postings whose location names only places outside your authorised regions ("Remote US") are dropped at fetch time, before any model call (switch off with `prefilter.skip_unreachable_locations: false` in `criteria.yaml`). Requirements that appear only in the posting text, such as US citizenship or work authorisation, are caught by the scoring step, which must quote the posting to reject.
 - Location eligibility is configured in `profile.yaml` (`work_eligibility`: home
   country, authorised regions, accepts relocation). The job's location string is
   read by plain code first (`eligibility.py`), the model only decides what that
